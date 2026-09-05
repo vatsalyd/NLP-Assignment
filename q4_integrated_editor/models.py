@@ -52,34 +52,81 @@ def load_shared_models():
         'train_sents': train_sents
     }
 
+def simplify_nt(nt):
+    """Simplify Penn Treebank non-terminal to base category."""
+    label = str(nt)
+    # Remove functional tags and indices
+    if '|' in label:
+        label = label.split('|')[0]
+    if '-' in label and not label.startswith('-'):
+        base = label.split('-')[0]
+        # Keep base categories
+        if base in ['NP', 'VP', 'PP', 'ADJP', 'ADVP', 'SBAR', 'S', 'PRP', 'PRP$',
+                      'DT', 'NN', 'NNS', 'NNP', 'NNPS', 'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ',
+                      'JJ', 'JJR', 'JJS', 'RB', 'RBR', 'RBS', 'IN', 'CC', 'CD', 'DT',
+                      'PRP', 'PRP$', 'WP', 'WP$', 'WRB', 'WDT', 'EX', 'FW', 'LS', 'MD',
+                      'PDT', 'POS', 'RP', 'SYM', 'TO', 'UH', '``', "''", ',', '.', ':', ';',
+                      '-LRB-', '-RRB-', '#', '$', 'POS', 'QP', 'INTJ', 'LST', 'ADVP',
+                      'PRT', 'X', 'NAC', 'NX', 'QP', 'RRC', 'UCP', 'WHADVP', 'WHADJP',
+                      'WHNP', 'WHPP', 'X', 'XX']:
+            return base
+    return label
+
+
+def binarize_productions(productions):
+    """Manually binarize productions without creating complex non-terminals."""
+    binary_prods = []
+    new_nt_counter = 0
+    
+    for prod in productions:
+        lhs = prod.lhs()
+        rhs = list(prod.rhs())
+        prob = getattr(prod, 'prob', None)
+        if prob is None:
+            prob = 1.0  # Will be re-estimated by induce_pcfg
+        
+        if len(rhs) <= 2:
+            binary_prods.append(ProbabilisticProduction(lhs, rhs, prob=prob))
+        else:
+            # Binarize: A -> B C D E  becomes  A -> B X1, X1 -> C X2, X2 -> D E
+            current_lhs = lhs
+            for i in range(len(rhs) - 2):
+                new_nt_name = f"_BIN{new_nt_counter}"
+                new_nt_counter += 1
+                new_nt = Nonterminal(new_nt_name)
+                binary_prods.append(ProbabilisticProduction(current_lhs, [rhs[i], new_nt], prob=prob))
+                current_lhs = new_nt
+            # Last pair
+            binary_prods.append(ProbabilisticProduction(current_lhs, [rhs[-2], rhs[-1]], prob=prob))
+    
+    return binary_prods
+
+
 def train_pcfg():
-    """Train a simple PCFG from treebank tagged sentences."""
-    productions = []
+    """Train a PCFG from treebank parsed sentences with simplified non-terminals."""
+    raw_productions = []
     
-    # Collect POS tag sequences from treebank
-    tag_sequences = []
-    for sent in treebank.tagged_sents():
-        tags = [tag for _, tag in sent]
-        tag_sequences.append(tags)
+    # Use treebank parsed sentences with full constituency structure
+    for tree in treebank.parsed_sents():
+        # Simplify non-terminals in the tree
+        def simplify_tree(t):
+            if isinstance(t, nltk.Tree):
+                t.set_label(simplify_nt(t.label()))
+                for child in t:
+                    simplify_tree(child)
+        simplify_tree(tree)
+        tree.collapse_unary(collapsePOS=True)
+        # Don't use CNF - collect raw productions
+        raw_productions.extend(tree.productions())
     
-    # Count POS n-grams for rule probabilities
-    pos_unigrams = Counter()
-    pos_bigrams = Counter()
-    pos_trigrams = Counter()
+    # Manually binarize
+    productions = binarize_productions(raw_productions)
     
-    for tags in tag_sequences:
-        for tag in tags:
-            pos_unigrams[tag] += 1
-        for i in range(len(tags)-1):
-            pos_bigrams[(tags[i], tags[i+1])] += 1
-        for i in range(len(tags)-2):
-            pos_trigrams[(tags[i], tags[i+1], tags[i+2])] += 1
-    
-    # Add lexical rules: POS -> word (top 30 words per POS)
+    # Add lexical rules: POS -> word
     word_pos_counts = defaultdict(Counter)
     for sent in treebank.tagged_sents():
         for word, tag in sent:
-            word_pos_counts[tag][word.lower()] += 1
+            word_pos_counts[simplify_nt(tag)][word.lower()] += 1
     
     for tag, counter in word_pos_counts.items():
         total = sum(counter.values())
@@ -87,28 +134,21 @@ def train_pcfg():
             prob = count / total
             productions.append(ProbabilisticProduction(Nonterminal(tag), [word], prob=prob))
     
-    # Add POS sequence rules using n-grams
-    # S -> POS
-    for tag, count in pos_unigrams.items():
-        prob = count / sum(pos_unigrams.values())
-        productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal(tag)], prob=prob * 0.1))
+    # Add identity productions for POS tags (allows CKY to use POS tags as terminals)
+    pos_tags = ['DT', 'NN', 'NNS', 'NNP', 'NNPS', 'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ',
+                'JJ', 'JJR', 'JJS', 'RB', 'RBR', 'RBS', 'IN', 'CC', 'CD', 'PRP', 'PRP$',
+                'WP', 'WP$', 'WRB', 'WDT', 'EX', 'FW', 'LS', 'MD', 'PDT', 'POS', 'RP',
+                'SYM', 'TO', 'UH', '``', "''", ',', '.', ':', ';', '-LRB-', '-RRB-',
+                '#', '$', 'QP', 'INTJ', 'NAC', 'NX', 'RRC', 'UCP', 'WHADVP', 'WHADJP',
+                'WHNP', 'WHPP', 'X', 'XX']
+    for tag in pos_tags:
+        productions.append(ProbabilisticProduction(Nonterminal(tag), [Nonterminal(tag)], prob=1.0))
     
-    # S -> POS POS
-    for (t1, t2), count in pos_bigrams.items():
-        prob = count / sum(pos_bigrams.values())
-        productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal(t1), Nonterminal(t2)], prob=prob * 0.3))
-    
-    # S -> POS POS POS
-    for (t1, t2, t3), count in pos_trigrams.items():
-        prob = count / sum(pos_trigrams.values())
-        productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal(t1), Nonterminal(t2), Nonterminal(t3)], prob=prob * 0.6))
-    
-    # S -> S S (recursive rule for longer sentences)
-    productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal('S'), Nonterminal('S')], prob=0.5))
-    
-    # Add punctuation rules
-    for tag in ['.', ',', ':', ';', '``', "''", '-LRB-', '-RRB-']:
-        productions.append(ProbabilisticProduction(Nonterminal(tag), [tag], prob=1.0))
+    # Add essential NP rules for pronouns
+    productions.append(ProbabilisticProduction(Nonterminal('NP'), [Nonterminal('PRP')], prob=0.1))
+    productions.append(ProbabilisticProduction(Nonterminal('NP'), [Nonterminal('PRP$')], prob=0.05))
+    productions.append(ProbabilisticProduction(Nonterminal('NP'), [Nonterminal('WP')], prob=0.05))
+    productions.append(ProbabilisticProduction(Nonterminal('NP'), [Nonterminal('EX')], prob=0.05))
     
     start = Nonterminal('S')
     pcfg = induce_pcfg(start, productions)
@@ -174,37 +214,70 @@ def cky_parse(pcfg, tokens):
     if n == 0:
         return None
     
+    # Build index: (B, C) -> list of productions with that RHS
+    binary_index = {}
+    for prod in pcfg.productions():
+        rhs = prod.rhs()
+        if len(rhs) == 2 and all(isinstance(x, Nonterminal) for x in rhs):
+            key = (rhs[0], rhs[1])
+            if key not in binary_index:
+                binary_index[key] = []
+            binary_index[key].append(prod)
+    
+    # Also index unary productions for base case: A -> B (where B is Nonterminal)
+    unary_index = {}
+    for prod in pcfg.productions():
+        rhs = prod.rhs()
+        if len(rhs) == 1 and isinstance(rhs[0], Nonterminal):
+            if rhs[0] not in unary_index:
+                unary_index[rhs[0]] = []
+            unary_index[rhs[0]].append(prod)
+    
+    # Convert string tokens to Nonterminal objects for PCFG lookup
+    nt_tokens = [Nonterminal(t) for t in tokens]
+    
     table = [[{} for _ in range(n)] for _ in range(n)]
     
-    for i, token in enumerate(tokens):
-        for prod in pcfg.productions(rhs=token):
-            table[i][i][prod.lhs()] = (prod.prob(), (prod,))
+    # Base case: span=1
+    for i, nt_token in enumerate(nt_tokens):
+        if nt_token in unary_index:
+            for prod in unary_index[nt_token]:
+                table[i][i][prod.lhs()] = (prod.prob(), (prod,))
     
+    # Recursive case: span >= 2
     for length in range(2, n+1):
         for i in range(n - length + 1):
             j = i + length - 1
             for k in range(i, j):
                 for B, (prob_B, parse_B) in table[i][k].items():
                     for C, (prob_C, parse_C) in table[k+1][j].items():
-                        for prod in pcfg.productions(rhs=(B, C)):
-                            prob = prod.prob() * prob_B * prob_C
-                            if prod.lhs() not in table[i][j] or prob > table[i][j][prod.lhs()][0]:
-                                table[i][j][prod.lhs()] = (prob, (prod, parse_B, parse_C))
+                        key = (B, C)
+                        if key in binary_index:
+                            for prod in binary_index[key]:
+                                prob = prod.prob() * prob_B * prob_C
+                                if prod.lhs() not in table[i][j] or prob > table[i][j][prod.lhs()][0]:
+                                    table[i][j][prod.lhs()] = (prob, (prod, parse_B, parse_C))
     
     start_symbol = pcfg.start()
     if start_symbol in table[0][n-1]:
         return table[0][n-1][start_symbol]
     return None
 
-def pos_tag_and_parse(pcfg, pos_tagger, words):
+def pos_tag_and_parse(pcfg, pos_tagger, words, ngram_model=None):
     if not words:
-        return None, []
+        return None, [], None
     
     universal_tags = pos_tagger.viterbi_decode(words)
     ptb_tags = [universal_to_ptb(t) for t in universal_tags]
     
     result = cky_parse(pcfg, ptb_tags)
-    return result, ptb_tags
+    
+    # Fallback to n-gram perplexity if PCFG parse fails
+    ngram_perp = None
+    if result is None and ngram_model is not None:
+        ngram_perp = ngram_model.perplexity(words, n=3)
+    
+    return result, ptb_tags, ngram_perp
 
 def bigram_perplexity(words, bigram_probs, unigram_probs, k=0.1):
     if not words:
@@ -313,12 +386,15 @@ if __name__ == "__main__":
     
     # Test
     words = ['the', 'cat', 'sat', 'on', 'the', 'mat']
-    result, tags = pos_tag_and_parse(pcfg, models['pos_tagger'], words)
+    result, ptb_tags, ngram_perp = pos_tag_and_parse(pcfg, models['pos_tagger'], words)
+    universal_tags = models['pos_tagger'].viterbi_decode(words)
     print(f"Words: {words}")
-    print(f"Universal tags: {tags}")
-    print(f"PTB tags: {[universal_to_ptb(t) for t in tags]}")
+    print(f"Universal tags: {universal_tags}")
+    print(f"PTB tags: {ptb_tags}")
     print(f"PCFG parse: {'Success' if result else 'Failed'}")
     if result:
         print(f"PCFG log prob: {math.log(result[0])}")
+    if ngram_perp is not None:
+        print(f"N-gram perplexity (fallback): {ngram_perp:.4f}")
     
     print("Done!")

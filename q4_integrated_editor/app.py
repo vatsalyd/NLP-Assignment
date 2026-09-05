@@ -2,70 +2,29 @@ import streamlit as st
 import random
 import time
 import math
-from collections import Counter, defaultdict
+import sys
 import nltk
 from nltk.corpus import brown, treebank, gutenberg, reuters
-from nltk import induce_pcfg, Nonterminal
 
-# Load models
-@st.cache_resource
-def load_models():
-    sentences = list(brown.sents())
-    words = [word.lower() for sent in sentences for word in sent]
-    
-    vocab = set(words)
-    unigram_counts = Counter(words)
-    total_words = len(words)
-    unigram_probs = {w: c/total_words for w, c in unigram_counts.items()}
-    
-    bigram_counts = defaultdict(Counter)
-    trigram_counts = defaultdict(Counter)
-    
-    for i in range(len(words)-1):
-        bigram_counts[words[i]][words[i+1]] += 1
-    for i in range(len(words)-2):
-        trigram_counts[(words[i], words[i+1])][words[i+2]] += 1
-    
-    bigram_probs = {}
-    for w1, counter in bigram_counts.items():
-        total = sum(counter.values())
-        bigram_probs[w1] = {w2: c/total for w2, c in counter.items()}
-    
-    trigram_probs = {}
-    for w1w2, counter in trigram_counts.items():
-        total = sum(counter.values())
-        trigram_probs[w1w2] = {w3: c/total for w3, c in counter.items()}
-    
-    return {
-        'vocab': vocab,
-        'unigram_counts': unigram_counts,
-        'unigram_probs': unigram_probs,
-        'bigram_probs': bigram_probs,
-        'trigram_probs': trigram_probs,
-        'words': words
-    }
+# Add path for Q1 and Q3 modules
+sys.path.append('D:\\projects\\NLP-Assignment\\q1_segmentation_pos')
+sys.path.append('D:\\projects\\NLP-Assignment\\q3_spelling_corrector')
 
-@st.cache_resource
-def load_pcfg():
-    productions = []
-    for tree in treebank.parsed_sents():
-        tree.collapse_unary(collapsePOS=True)
-        tree.chomsky_normal_form(horzMarkov=2)
-        productions.extend(tree.productions())
-    
-    start = Nonterminal('S')
-    pcfg = induce_pcfg(start, productions)
-    return pcfg
+from q1_segmentation_pos.corpus_loader import load_brown_corpus as load_brown_corpus_q1, extract_words_tags, build_vocabulary
+from q1_segmentation_pos.pos_tagger import POSTagger
+from q3_spelling_corrector.spelling_corrector import SymmetricDeleteCorrector, edit_distance_1, load_brown_corpus as load_brown_corpus_q3
 
-@st.cache_resource
-def load_spelling_models():
-    import sys
-    sys.path.append('D:\\projects\\NLP-Assignment\\q3_spelling_corrector')
-    from spelling_corrector import SymmetricDeleteCorrector, edit_distance_1
-    
-    models = load_models()
-    sym_delete = SymmetricDeleteCorrector(models['vocab'], models['unigram_counts'])
-    return sym_delete, edit_distance_1
+# Import shared models and functions
+from models import (
+    load_shared_models,
+    train_pcfg,
+    pos_tag_and_parse,
+    cky_parse,
+    viterbi_segmentation,
+    SmoothedNGramModel,
+    get_random_passage,
+    introduce_merges,
+)
 
 def correct_nonword(word, vocab, unigram_counts, edit_distance_1_func, sym_delete):
     if word in vocab:
@@ -107,133 +66,118 @@ def correct_realword(word, prev_word, vocab, unigram_counts, bigram_probs, edit_
     
     return best_candidate
 
-def viterbi_segmentation(text, vocab, trigram_probs, unigram_probs, max_word_len=20):
-    n = len(text)
-    dp = [float('-inf')] * (n + 1)
-    backtrack = [None] * (n + 1)
-    dp[0] = 0.0
+def run_speed_demon_benchmark(vocab, unigram_counts, bigram_probs, trigram_probs, 
+                               unigram_probs, edit_distance_1_func, sym_delete, 
+                               pos_tagger, pcfg, ngram_model):
+    """Run Speed Demon benchmark for the full live-check pipeline."""
+    import time
     
-    for i in range(1, n + 1):
-        for j in range(max(0, i - max_word_len), i):
-            word = text[j:i]
-            if word in vocab:
-                if j == 0:
-                    prob = unigram_probs.get(word, 1e-10)
-                    if dp[j] + math.log(prob) > dp[i]:
-                        dp[i] = dp[j] + math.log(prob)
-                        backtrack[i] = (j, word)
-                elif j == 1:
-                    first = text[0:1]
-                    prob = trigram_probs.get((first,), {}).get(word, 1e-10)
-                    if dp[j] + math.log(prob) > dp[i]:
-                        dp[i] = dp[j] + math.log(prob)
-                        backtrack[i] = (j, word)
-                else:
-                    if backtrack[j]:
-                        prev_j, prev_word = backtrack[j]
-                        if prev_j == 0:
-                            prob = trigram_probs.get((prev_word,), {}).get(word, 1e-10)
-                        else:
-                            prev2_j, prev2_word = backtrack[prev_j] if backtrack[prev_j] else (0, '')
-                            prob = trigram_probs.get((prev2_word, prev_word), {}).get(word, 1e-10)
-                        if dp[j] + math.log(prob) > dp[i]:
-                            dp[i] = dp[j] + math.log(prob)
-                            backtrack[i] = (j, word)
+    # Generate 200 simulated words (reduced for speed)
+    _, words = load_brown_corpus_q3()
+    test_words = []
+    for _ in range(200):
+        w = random.choice(words)
+        test_words.append(w)
     
-    if dp[n] == float('-inf'):
-        return [text]
+    # Benchmark 1: Per-token pipeline (segmentation + spelling) - NO PCFG
+    start = time.perf_counter()
+    seg_spell_latencies = []
+    for word in test_words:
+        token_start = time.perf_counter()
+        
+        # Segmentation check
+        if word not in vocab and len(word) > 5:
+            _ = viterbi_segmentation(word, vocab, trigram_probs, unigram_probs)
+        
+        # Spelling check
+        clean_word = word.strip('.,!?;:')
+        if clean_word and clean_word not in vocab:
+            _ = correct_nonword(clean_word, vocab, unigram_counts, edit_distance_1_func, sym_delete)
+        
+        seg_spell_latencies.append((time.perf_counter() - token_start) * 1000)
     
-    words = []
-    i = n
-    while i > 0:
-        if backtrack[i] is None:
-            words.append(text[:i])
-            break
-        j, word = backtrack[i]
-        words.append(word)
-        i = j
-    words.reverse()
-    return words
+    full_pipeline_time = time.perf_counter() - start
+    avg_seg_spell = sum(seg_spell_latencies) / len(seg_spell_latencies)
+    
+    # Benchmark 2: Grammar trigger check only (every N words)
+    N = 10
+    trigger_latencies = []
+    start = time.perf_counter()
+    for i in range(0, len(test_words), N):
+        window = test_words[i:i+N]
+        if len(window) < 2:
+            continue
+        trigger_start = time.perf_counter()
+        
+        # PCFG parse with POS tagging
+        _ = pos_tag_and_parse(pcfg, pos_tagger, window, ngram_model)
+        
+        trigger_latencies.append((time.perf_counter() - trigger_start) * 1000)
+    
+    grammar_time = time.perf_counter() - start
+    avg_grammar = sum(trigger_latencies) / len(trigger_latencies) if trigger_latencies else 0
+    
+    return {
+        'full_pipeline_total': full_pipeline_time,
+        'avg_seg_spell_ms': avg_seg_spell,
+        'grammar_check_total': grammar_time,
+        'avg_grammar_ms': avg_grammar,
+        'seg_spell_per_word': avg_seg_spell,
+        'grammar_per_trigger': avg_grammar,
+    }
 
-def cky_parse(pcfg, tokens):
-    n = len(tokens)
-    if n == 0:
-        return None
+@st.cache_resource
+def load_all_models():
+    """Load all shared models at once."""
+    models = load_shared_models()
     
-    table = [[{} for _ in range(n)] for _ in range(n)]
+    # Build n-gram model for fallback
+    ngram_model = SmoothedNGramModel(
+        models['unigram_probs'],
+        models['bigram_probs'],
+        models['trigram_probs'],
+        models['vocab']
+    )
     
-    for i, token in enumerate(tokens):
-        for prod in pcfg.productions(rhs=token):
-            table[i][i][prod.lhs()] = (prod.prob(), (prod,))
+    # Train PCFG
+    pcfg = train_pcfg()
     
-    for length in range(2, n+1):
-        for i in range(n - length + 1):
-            j = i + length - 1
-            for k in range(i, j):
-                for B, (prob_B, parse_B) in table[i][k].items():
-                    for C, (prob_C, parse_C) in table[k+1][j].items():
-                        for prod in pcfg.productions(rhs=(B, C)):
-                            prob = prod.prob() * prob_B * prob_C
-                            if prod.lhs() not in table[i][j] or prob > table[i][j][prod.lhs()][0]:
-                                table[i][j][prod.lhs()] = (prob, (prod, parse_B, parse_C))
+    # Load spelling corrector
+    sym_delete = SymmetricDeleteCorrector(models['vocab'], models['unigram_counts'])
     
-    start_symbol = pcfg.start()
-    if start_symbol in table[0][n-1]:
-        return table[0][n-1][start_symbol]
-    return None
-
-def get_random_passage():
-    corpora = [gutenberg, reuters, brown]
-    corpus = random.choice(corpora)
-    files = corpus.fileids()
-    file = random.choice(files)
-    sents = corpus.sents(file)
-    if len(sents) < 8:
-        return get_random_passage()
-    start = random.randint(0, len(sents) - 8)
-    passage_sents = sents[start:start + random.randint(5, 8)]
-    return ' '.join(' '.join(s) for s in passage_sents)
-
-def introduce_merges(tokens, p=0.08):
-    result = []
-    for i, token in enumerate(tokens):
-        result.append(token)
-        if i < len(tokens) - 1 and random.random() < p:
-            result[-1] = result[-1] + tokens[i+1]
-            i += 1
-    return result
-
-def bigram_perplexity(words, bigram_probs, unigram_probs, k=0.1):
-    if not words:
-        return float('inf')
-    vocab_size = len(unigram_probs)
-    log_prob = math.log(unigram_probs.get(words[0], k/(k*vocab_size)))
-    for i in range(1, len(words)):
-        w1, w2 = words[i-1], words[i]
-        prob = bigram_probs.get(w1, {}).get(w2, k/(k*vocab_size))
-        log_prob += math.log(prob)
-    return math.exp(-log_prob / len(words))
-
-def trigram_perplexity(words, trigram_probs, bigram_probs, unigram_probs, k=0.1):
-    if not words:
-        return float('inf')
-    vocab_size = len(unigram_probs)
-    if len(words) == 1:
-        return math.exp(-math.log(unigram_probs.get(words[0], k/(k*vocab_size))))
-    log_prob = math.log(unigram_probs.get(words[0], k/(k*vocab_size)))
-    log_prob += math.log(bigram_probs.get(words[0], {}).get(words[1], k/(k*vocab_size)))
-    for i in range(2, len(words)):
-        prob = trigram_probs.get((words[i-2], words[i-1]), {}).get(words[i], k/(k*vocab_size))
-        log_prob += math.log(prob)
-    return math.exp(-log_prob / len(words))
+    return {
+        'models': models,
+        'ngram_model': ngram_model,
+        'pcfg': pcfg,
+        'sym_delete': sym_delete,
+        'pos_tagger': models['pos_tagger'],
+    }
 
 def main():
     st.title("Integrated Background Editor")
     st.write("Live segmentation, spelling correction, and grammar checking")
     
-    models = load_models()
-    pcfg = load_pcfg()
-    sym_delete, edit_distance_1 = load_spelling_models()
+    # Sidebar for parameters
+    with st.sidebar:
+        st.write("### Parameters")
+        st.write("**Merge probability p = 0.08**")
+        st.write("Justification: Simulates realistic fast-typing spacebar miss rate (~8%)")
+        st.write("")
+        st.write("**Trigger interval N = 10**")
+        st.write("Justification: Balances latency (checking every 10 words) with responsiveness")
+        st.write("")
+        st.write("**Add-k smoothing k = 0.1**")
+        st.write("Justification: Standard small value for smoothing sparse n-grams")
+        st.write("")
+        st.write("**Tagset reconciliation**")
+        st.write("Brown universal -> Penn Treebank via lookup table")
+    
+    all_models = load_all_models()
+    models = all_models['models']
+    ngram_model = all_models['ngram_model']
+    pcfg = all_models['pcfg']
+    sym_delete = all_models['sym_delete']
+    pos_tagger = all_models['pos_tagger']
     
     vocab = models['vocab']
     unigram_counts = models['unigram_counts']
@@ -254,6 +198,14 @@ def main():
         st.session_state.segmentation_count = 0
     if 'spelling_count' not in st.session_state:
         st.session_state.spelling_count = 0
+    if 'seg_latencies' not in st.session_state:
+        st.session_state.seg_latencies = []
+    if 'grammar_latencies' not in st.session_state:
+        st.session_state.grammar_latencies = []
+    if 'sentence_seg_counts' not in st.session_state:
+        st.session_state.sentence_seg_counts = {}
+    if 'sentence_spell_counts' not in st.session_state:
+        st.session_state.sentence_spell_counts = {}
     
     st.write("### Live Typing Simulation")
     
@@ -266,6 +218,10 @@ def main():
             st.session_state.alerts = []
             st.session_state.segmentation_count = 0
             st.session_state.spelling_count = 0
+            st.session_state.seg_latencies = []
+            st.session_state.grammar_latencies = []
+            st.session_state.sentence_seg_counts = {}
+            st.session_state.sentence_spell_counts = {}
             st.rerun()
     
     with col2:
@@ -283,6 +239,9 @@ def main():
         
         processed = []
         alerts = []
+        sentence_seg_counts = {}
+        sentence_spell_counts = {}
+        current_sentence_idx = 0
         
         N = 10
         
@@ -290,44 +249,83 @@ def main():
             progress_bar.progress((i + 1) / len(merged_tokens))
             status_text.text(f"Processing token {i+1}/{len(merged_tokens)}: {token}")
             
-            start = time.perf_counter()
+            token_start = time.perf_counter()
             
             # SEGMENT-ALERT
+            seg_alert_fired = False
             if token not in vocab and len(token) > 5:
                 seg_words = viterbi_segmentation(token, vocab, trigram_probs, unigram_probs)
                 if len(seg_words) > 1:
                     st.session_state.segmentation_count += 1
+                    sentence_seg_counts[current_sentence_idx] = sentence_seg_counts.get(current_sentence_idx, 0) + 1
                     alerts.append(f"[SEGMENT-ALERT] '{token}' -> {' '.join(seg_words)}")
                     token = ' '.join(seg_words)
+                    seg_alert_fired = True
             
             # SPELL-ALERT
+            spell_alert_fired = False
             word = token.split()[-1] if ' ' in token else token
             clean_word = word.strip('.,!?;:')
             if clean_word and clean_word not in vocab:
                 corrected = correct_nonword(clean_word, vocab, unigram_counts, edit_distance_1, sym_delete)
                 if corrected != clean_word:
                     st.session_state.spelling_count += 1
+                    sentence_spell_counts[current_sentence_idx] = sentence_spell_counts.get(current_sentence_idx, 0) + 1
                     alerts.append(f"[SPELL-ALERT] '{clean_word}' -> '{corrected}'")
                     token = token.replace(clean_word, corrected)
+                    spell_alert_fired = True
             
             processed.append(token)
             
-            # GRAMMAR-ALERT every N words
+            # Track sentence boundaries for per-sentence counts
+            if token.endswith('.') or token.endswith('!') or token.endswith('?'):
+                current_sentence_idx += 1
+            
+            # GRAMMAR-ALERT and REAL-WORD check every N words
+            grammar_start = time.perf_counter()
             if (i + 1) % N == 0:
                 window = processed[max(0, i-N+1):i+1]
                 flat_words = ' '.join(window).split()
-                bi_perp = bigram_perplexity(flat_words, bigram_probs, unigram_probs)
-                tri_perp = trigram_perplexity(flat_words, trigram_probs, bigram_probs, unigram_probs)
                 
-                if bi_perp > 500 or tri_perp > 500:
-                    alerts.append(f"[GRAMMAR-ALERT] High perplexity: bigram={bi_perp:.1f}, trigram={tri_perp:.1f} in '{' '.join(window)}'")
+                # Try PCFG parse with POS tagging
+                pcfg_result, ptb_tags, ngram_perp = pos_tag_and_parse(pcfg, pos_tagger, flat_words, ngram_model)
+                
+                grammar_alert_fired = False
+                if pcfg_result:
+                    pcfg_score = math.log(pcfg_result[0])
+                    if pcfg_score < -100:  # Very low probability
+                        alerts.append(f"[GRAMMAR-ALERT] Low PCFG probability: {pcfg_score:.2f} in '{' '.join(window)}'")
+                        grammar_alert_fired = True
+                elif ngram_perp is not None:
+                    # Fallback to n-gram perplexity
+                    if ngram_perp > 500:
+                        alerts.append(f"[GRAMMAR-ALERT] High trigram perplexity (fallback): {ngram_perp:.1f} in '{' '.join(window)}'")
+                        grammar_alert_fired = True
+                
+                # REAL-WORD ERROR CHECK at same trigger interval
+                if len(flat_words) >= 2:
+                    for j in range(1, len(flat_words)):
+                        prev = flat_words[j-1]
+                        curr = flat_words[j]
+                        if curr in vocab:
+                            corrected = correct_realword(curr, prev, vocab, unigram_counts, 
+                                                         bigram_probs, edit_distance_1, sym_delete)
+                            if corrected != curr:
+                                alerts.append(f"[GRAMMAR-ALERT] Real-word: '{prev} {curr}' -> '{prev} {corrected}'")
             
-            elapsed = (time.perf_counter() - start) * 1000
+            grammar_elapsed = (time.perf_counter() - grammar_start) * 1000
+            token_elapsed = (time.perf_counter() - token_start) * 1000
+            
+            st.session_state.seg_latencies.append(token_elapsed)
+            st.session_state.grammar_latencies.append(grammar_elapsed)
+            
             if i % 5 == 0:
                 alert_container.write(f"Latest alerts: {alerts[-3:] if alerts else 'None'}")
         
         st.session_state.processed = processed
         st.session_state.alerts = alerts
+        st.session_state.sentence_seg_counts = sentence_seg_counts
+        st.session_state.sentence_spell_counts = sentence_spell_counts
         st.session_state.run_live = False
         st.success("Live processing complete!")
     
@@ -343,21 +341,47 @@ def main():
         st.write(f"Segmentation corrections: {st.session_state.segmentation_count}")
         st.write(f"Spelling corrections: {st.session_state.spelling_count}")
         
+        # Latency report
+        if st.session_state.seg_latencies:
+            avg_seg = sum(st.session_state.seg_latencies) / len(st.session_state.seg_latencies)
+            avg_gram = sum(st.session_state.grammar_latencies) / len(st.session_state.grammar_latencies) if st.session_state.grammar_latencies else 0
+            st.write("### Latency Report")
+            st.write(f"Avg per-token (seg+spell) latency: {avg_seg:.2f} ms")
+            st.write(f"Avg per-trigger grammar latency: {avg_gram:.2f} ms")
+        
+        # Speed Demon Benchmark
+        st.write("### Speed Demon Benchmark")
+        if st.button("Run Speed Demon Benchmark (1000 words)"):
+            with st.spinner("Running benchmark..."):
+                bench_results = run_speed_demon_benchmark(
+                    vocab, unigram_counts, bigram_probs, trigram_probs,
+                    unigram_probs, edit_distance_1, sym_delete,
+                    pos_tagger, pcfg, ngram_model
+                )
+            
+            st.write(f"**Full Pipeline (seg+spell)**: Total={bench_results['full_pipeline_total']:.3f}s, Avg/word={bench_results['avg_seg_spell_ms']:.3f}ms")
+            st.write(f"**Grammar Trigger Check**: Total={bench_results['grammar_check_total']:.3f}s, Avg/trigger={bench_results['avg_grammar_ms']:.3f}ms")
+            st.write(f"**Overhead**: Seg+spell layer adds ~{bench_results['avg_seg_spell_ms'] - bench_results['avg_grammar_ms']:.3f}ms per word over grammar layer")
+        
         # Final analysis
         if st.button("Run Final Analysis"):
             full_text = ' '.join(st.session_state.processed)
             sentences = nltk.sent_tokenize(full_text)
             
             results = []
-            for sent in sentences:
+            for sent_idx, sent in enumerate(sentences):
                 tokens = nltk.word_tokenize(sent.lower())
                 tokens = [t for t in tokens if t.isalpha()]
                 
-                pcfg_result = cky_parse(pcfg, tokens)
+                if not tokens:
+                    continue
+                
+                # PCFG parse with POS tagging and n-gram fallback
+                pcfg_result, ptb_tags, ngram_perp = pos_tag_and_parse(pcfg, pos_tagger, tokens, ngram_model)
                 pcfg_score = math.log(pcfg_result[0]) if pcfg_result else float('-inf')
                 
-                bi_perp = bigram_perplexity(tokens, bigram_probs, unigram_probs)
-                tri_perp = trigram_perplexity(tokens, trigram_probs, bigram_probs, unigram_probs)
+                bi_perp = ngram_model.perplexity(tokens, n=2)
+                tri_perp = ngram_model.perplexity(tokens, n=3)
                 
                 # Decision rule
                 if pcfg_result and pcfg_score > -100:
@@ -370,17 +394,35 @@ def main():
                     method = "Bigram"
                     verdict = "Grammatical" if bi_perp < 150 else "Questionable"
                 
+                seg_count = st.session_state.sentence_seg_counts.get(sent_idx, 0)
+                spell_count = st.session_state.sentence_spell_counts.get(sent_idx, 0)
+                
                 results.append({
-                    'sentence': sent,
+                    'sentence': sent[:80] + ('...' if len(sent) > 80 else ''),
                     'pcfg_score': f"{pcfg_score:.2f}" if pcfg_score != float('-inf') else "Unparseable",
                     'bigram_perp': f"{bi_perp:.2f}",
                     'trigram_perp': f"{tri_perp:.2f}",
                     'method': method,
-                    'verdict': verdict
+                    'verdict': verdict,
+                    'seg_corrections': seg_count,
+                    'spell_corrections': spell_count
                 })
             
-            st.write("### Final Analysis")
+            st.write("### Final Analysis - Per-Sentence Comparison Table")
             st.table(results)
+            
+            # Comparative analysis
+            st.write("### Comparative Analysis Summary")
+            pcfg_count = sum(1 for r in results if r['method'] == 'PCFG')
+            trigram_count = sum(1 for r in results if r['method'] == 'Trigram')
+            bigram_count = sum(1 for r in results if r['method'] == 'Bigram')
+            grammatical = sum(1 for r in results if r['verdict'] == 'Grammatical')
+            
+            st.write(f"Sentences analyzed: {len(results)}")
+            st.write(f"Method selection: PCFG={pcfg_count}, Trigram={trigram_count}, Bigram={bigram_count}")
+            st.write(f"Grammatical: {grammatical}, Questionable: {len(results) - grammatical}")
+            st.write(f"Total segmentation corrections: {st.session_state.segmentation_count}")
+            st.write(f"Total spelling corrections: {st.session_state.spelling_count}")
 
 if __name__ == "__main__":
     main()
