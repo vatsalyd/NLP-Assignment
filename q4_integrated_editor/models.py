@@ -62,14 +62,10 @@ def train_pcfg():
         tags = [tag for _, tag in sent]
         tag_sequences.append(tags)
     
-    # Build simple CFG rules
-    # S -> sequence of POS tags
-    # Use n-gram statistics to create probabilistic rules
-    
-    # Count POS bigrams and trigrams for rule probabilities
+    # Count POS n-grams for rule probabilities
+    pos_unigrams = Counter()
     pos_bigrams = Counter()
     pos_trigrams = Counter()
-    pos_unigrams = Counter()
     
     for tags in tag_sequences:
         for tag in tags:
@@ -79,26 +75,7 @@ def train_pcfg():
         for i in range(len(tags)-2):
             pos_trigrams[(tags[i], tags[i+1], tags[i+2])] += 1
     
-    # Create productions
-    # S -> POS POS ... (using bigram/trigram statistics)
-    # We'll create a simple flat grammar
-    
-    # Add unigram rules: S -> POS
-    for tag, count in pos_unigrams.items():
-        prob = count / sum(pos_unigrams.values())
-        productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal(tag)], prob=prob))
-    
-    # Add bigram rules: S -> POS POS
-    for (t1, t2), count in pos_bigrams.items():
-        prob = count / sum(pos_bigrams.values())
-        productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal(t1), Nonterminal(t2)], prob=prob))
-    
-    # Add trigram rules: S -> POS POS POS
-    for (t1, t2, t3), count in pos_trigrams.items():
-        prob = count / sum(pos_trigrams.values())
-        productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal(t1), Nonterminal(t2), Nonterminal(t3)], prob=prob))
-    
-    # Add lexical rules: POS -> word
+    # Add lexical rules: POS -> word (top 30 words per POS)
     word_pos_counts = defaultdict(Counter)
     for sent in treebank.tagged_sents():
         for word, tag in sent:
@@ -106,22 +83,34 @@ def train_pcfg():
     
     for tag, counter in word_pos_counts.items():
         total = sum(counter.values())
-        for word, count in counter.most_common(50):  # Limit to top 50 words per POS
+        for word, count in counter.most_common(30):
             prob = count / total
             productions.append(ProbabilisticProduction(Nonterminal(tag), [word], prob=prob))
+    
+    # Add POS sequence rules using n-grams
+    # S -> POS
+    for tag, count in pos_unigrams.items():
+        prob = count / sum(pos_unigrams.values())
+        productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal(tag)], prob=prob * 0.1))
+    
+    # S -> POS POS
+    for (t1, t2), count in pos_bigrams.items():
+        prob = count / sum(pos_bigrams.values())
+        productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal(t1), Nonterminal(t2)], prob=prob * 0.3))
+    
+    # S -> POS POS POS
+    for (t1, t2, t3), count in pos_trigrams.items():
+        prob = count / sum(pos_trigrams.values())
+        productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal(t1), Nonterminal(t2), Nonterminal(t3)], prob=prob * 0.6))
+    
+    # S -> S S (recursive rule for longer sentences)
+    productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal('S'), Nonterminal('S')], prob=0.5))
     
     # Add punctuation rules
     for tag in ['.', ',', ':', ';', '``', "''", '-LRB-', '-RRB-']:
         productions.append(ProbabilisticProduction(Nonterminal(tag), [tag], prob=1.0))
     
     start = Nonterminal('S')
-    pcfg = induce_pcfg(start, productions)
-    
-    # Add recursive rule S -> S S to allow longer sequences
-    # We need to manually add this since induce_pcfg doesn't create it
-    productions.append(ProbabilisticProduction(Nonterminal('S'), [Nonterminal('S'), Nonterminal('S')], prob=0.5))
-    
-    # Re-induce with the new production
     pcfg = induce_pcfg(start, productions)
     return pcfg
 
@@ -327,6 +316,9 @@ if __name__ == "__main__":
     result, tags = pos_tag_and_parse(pcfg, models['pos_tagger'], words)
     print(f"Words: {words}")
     print(f"Universal tags: {tags}")
+    print(f"PTB tags: {[universal_to_ptb(t) for t in tags]}")
     print(f"PCFG parse: {'Success' if result else 'Failed'}")
+    if result:
+        print(f"PCFG log prob: {math.log(result[0])}")
     
     print("Done!")
