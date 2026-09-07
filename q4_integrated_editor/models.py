@@ -1,4 +1,15 @@
 import nltk
+
+# Download required NLTK data (for Streamlit Cloud deployment)
+def _download_nltk_data():
+    for resource in ['brown', 'treebank', 'gutenberg', 'reuters', 'universal_tagset', 'punkt']:
+        try:
+            nltk.data.find(f'corpora/{resource}')
+        except LookupError:
+            nltk.download(resource, quiet=True)
+
+_download_nltk_data()
+
 from nltk.corpus import brown, treebank, gutenberg, reuters
 from nltk import induce_pcfg, Nonterminal, Tree, ProbabilisticProduction
 from collections import defaultdict, Counter
