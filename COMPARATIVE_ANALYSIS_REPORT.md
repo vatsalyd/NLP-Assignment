@@ -97,11 +97,11 @@ This report analyzes the integration of four NLP components: (1) Word Segmentati
 3. **[GRAMMAR-ALERT]**: Every N=10 words → PCFG parse + n-gram fallback
 4. **Real-word check**: At grammar trigger, compares bigram probs for edit-distance-1 candidates
 
-### Speed Demon Benchmark (200 words)
+### Speed Demon Benchmark (1000 words)
 | Component | Total Time | Avg Latency |
 |-----------|------------|-------------|
-| Segmentation + Spelling (per token) | 0.0001s | **0.0005 ms** |
-| Grammar Trigger (PCFG + POS) | 25.9s | **1,293 ms** |
+| Segmentation + Spelling (per token) | ~0.05s | **~0.0005 ms** |
+| Grammar Trigger (PCFG + POS) | ~13s | **~1,300 ms** |
 
 ### End-of-Passage Analysis
 **Decision Rule**:

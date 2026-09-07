@@ -138,4 +138,3 @@ Most confused pairs:
 5. Use pre-trained embeddings for better generalization
 
 ---
-*Report generated for NLP Assignment Question 1*

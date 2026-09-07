@@ -3,12 +3,13 @@ import random
 import time
 import math
 import sys
+import os
 import nltk
 from nltk.corpus import brown, treebank, gutenberg, reuters
 
 # Add path for Q1 and Q3 modules
-sys.path.append('D:\\projects\\NLP-Assignment\\q1_segmentation_pos')
-sys.path.append('D:\\projects\\NLP-Assignment\\q3_spelling_corrector')
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
 
 from q1_segmentation_pos.corpus_loader import load_brown_corpus as load_brown_corpus_q1, extract_words_tags, build_vocabulary
 from q1_segmentation_pos.pos_tagger import POSTagger

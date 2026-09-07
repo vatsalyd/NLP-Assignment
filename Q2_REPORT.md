@@ -147,4 +147,3 @@ However, the **LAS of 30.3%** indicates significant room for improvement. The pr
 With full training data and enriched features, we expect LAS to reach 50-60%. With neural models and beam search, 75%+ should be achievable.
 
 ---
-*Report generated for NLP Assignment Question 2*
