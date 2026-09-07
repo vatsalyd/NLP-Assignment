@@ -1,7 +1,10 @@
 import sys
-sys.path.append('D:\\projects\\NLP-Assignment\\q3_spelling_corrector')
+import os
 
-from spelling_corrector import (
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+
+from q3_spelling_corrector.spelling_corrector import (
     load_brown_corpus, build_models, edit_distance_1, 
     SymmetricDeleteCorrector, correct_nonword, correct_realword
 )

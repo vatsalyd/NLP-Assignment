@@ -1,10 +1,33 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
+*.py[cod]
+*$py.class
+
+# Virtual environments
 venv/
+env/
 .env
+
+# Streamlit
+.streamlit/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large model files (use Git LFS if needed)
+# checkpoints/*.pkl
+
+# Logs
 *.log
-data/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/

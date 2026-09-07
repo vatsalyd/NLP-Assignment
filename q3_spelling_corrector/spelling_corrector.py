@@ -4,7 +4,11 @@ from collections import defaultdict, Counter
 import random
 import math
 import sys
-sys.path.append('D:\\projects\\NLP-Assignment')
+import os
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+
 from model_utils import get_or_train, CHECKPOINT_DIR
 
 FORCE_RETRAIN = False

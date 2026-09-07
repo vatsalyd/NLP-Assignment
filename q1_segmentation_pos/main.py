@@ -1,12 +1,14 @@
 import sys
-sys.path.append('D:\\projects\\NLP-Assignment')
-sys.path.append('D:\\projects\\NLP-Assignment\\q1_segmentation_pos')
+import os
 
-from corpus_loader import load_brown_corpus, load_ud_spanish, extract_words_tags, build_vocabulary
-from trigram_lm import TrigramLanguageModel, viterbi_segmentation
-from pos_tagger import POSTagger, load_ud_spanish_morph
-from baselines import GreedyLongestMatchSegmenter, MostFrequentTagger
-from evaluation import compute_accuracy, compute_confusion_matrix, print_confusion_matrix, error_source_analysis, evaluate_segmentation
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+
+from q1_segmentation_pos.corpus_loader import load_brown_corpus, load_ud_spanish, extract_words_tags, build_vocabulary
+from q1_segmentation_pos.trigram_lm import TrigramLanguageModel, viterbi_segmentation
+from q1_segmentation_pos.pos_tagger import POSTagger, load_ud_spanish_morph
+from q1_segmentation_pos.baselines import GreedyLongestMatchSegmenter, MostFrequentTagger
+from q1_segmentation_pos.evaluation import compute_accuracy, compute_confusion_matrix, print_confusion_matrix, error_source_analysis, evaluate_segmentation
 from model_utils import get_or_train, CHECKPOINT_DIR
 from config import Q1_CONFIG, UD_SPANISH_TRAIN, UD_SPANISH_DEV, UD_SPANISH_TEST
 

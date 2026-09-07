@@ -4,12 +4,16 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 import numpy as np
 import sys
-sys.path.append('D:\\projects\\NLP-Assignment')
+import os
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+
 from model_utils import get_or_train, CHECKPOINT_DIR
 from config import Q2_CONFIG, UD_ENGLISH_TRAIN, UD_ENGLISH_DEV
-from conllu_parser import Sentence, parse_conllu, get_gold_arcs
-from transition_system import Configuration, Transition, TransitionType, apply_transition, get_oracle_transition
-from features import extract_features, transition_to_label, label_to_transition, prepare_training_data
+from q2_dependency_parser.conllu_parser import Sentence, parse_conllu, get_gold_arcs
+from q2_dependency_parser.transition_system import Configuration, Transition, TransitionType, apply_transition, get_oracle_transition
+from q2_dependency_parser.features import extract_features, transition_to_label, label_to_transition, prepare_training_data
 
 FORCE_RETRAIN = False
 

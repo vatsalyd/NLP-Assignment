@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional, Set
 from enum import Enum
-from conllu_parser import Sentence, Token, get_gold_arcs
+from q2_dependency_parser.conllu_parser import Sentence, Token, get_gold_arcs
 
 class TransitionType(Enum):
     SHIFT = "SHIFT"

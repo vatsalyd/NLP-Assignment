@@ -1,6 +1,6 @@
 from typing import List, Dict, Tuple
-from conllu_parser import Sentence
-from transition_system import Configuration, Transition, TransitionType
+from q2_dependency_parser.conllu_parser import Sentence
+from q2_dependency_parser.transition_system import Configuration, Transition, TransitionType
 
 def extract_features(config: Configuration, sentence: Sentence) -> Dict[str, str]:
     features = {}
@@ -78,4 +78,4 @@ def prepare_training_data(sentences: List[Sentence]):
             y.append(transition_to_label(trans))
     return X, y
 
-from transition_system import simulate_oracle
+from q2_dependency_parser.transition_system import simulate_oracle
