@@ -5,10 +5,14 @@ from collections import defaultdict, Counter
 import math
 import random
 import sys
+import os
 
-sys.path.append('D:\\projects\\NLP-Assignment\\q1_segmentation_pos')
-from corpus_loader import load_brown_corpus, extract_words_tags, build_vocabulary
-from pos_tagger import POSTagger
+# Add project root to path for Q1 imports
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+
+from q1_segmentation_pos.corpus_loader import load_brown_corpus, extract_words_tags, build_vocabulary
+from q1_segmentation_pos.pos_tagger import POSTagger
 
 def load_shared_models():
     train_sents, test_sents = load_brown_corpus(0.8)
