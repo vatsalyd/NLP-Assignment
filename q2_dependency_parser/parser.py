@@ -3,14 +3,25 @@ from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 import numpy as np
+import sys
+sys.path.append('D:\\projects\\NLP-Assignment')
+from model_utils import get_or_train, CHECKPOINT_DIR
+from config import Q2_CONFIG, UD_ENGLISH_TRAIN, UD_ENGLISH_DEV
 from conllu_parser import Sentence, parse_conllu, get_gold_arcs
 from transition_system import Configuration, Transition, TransitionType, apply_transition, get_oracle_transition
 from features import extract_features, transition_to_label, label_to_transition, prepare_training_data
 
+FORCE_RETRAIN = False
+
 class DependencyParser:
     def __init__(self):
         self.vectorizer = DictVectorizer(sparse=True)
-        self.classifier = LogisticRegression(max_iter=1000, C=1.0, solver='lbfgs')
+        lr_config = Q2_CONFIG["logistic_regression"]
+        self.classifier = LogisticRegression(
+            max_iter=lr_config["max_iter"],
+            C=lr_config["C"],
+            solver=lr_config["solver"]
+        )
         self.classes_ = None
     
     def train(self, sentences: List[Sentence]):
@@ -51,7 +62,9 @@ def compute_las(predicted_arcs: List[Tuple[int, int, str]], gold_arcs: List[Tupl
     total = len(gold_set)
     return correct / total
 
-def evaluate_on_dev(parser: DependencyParser, dev_sentences, n=100):
+def evaluate_on_dev(parser: DependencyParser, dev_sentences, n=None):
+    if n is None:
+        n = Q2_CONFIG["eval_sample_size"]
     print(f"\nEvaluating on {n} dev sentences...")
     total_las = 0.0
     count = 0
@@ -72,22 +85,29 @@ def evaluate_on_dev(parser: DependencyParser, dev_sentences, n=100):
     print(f"Average LAS on {count} dev sentences: {avg_las:.4f}")
     return avg_las
 
-if __name__ == "__main__":
-    train_path = "D:/projects/NLP-Assignment/data/UD_English-EWT/en_ewt-ud-train.conllu"
-    dev_path = "D:/projects/NLP-Assignment/data/UD_English-EWT/en_ewt-ud-dev.conllu"
-    
+def train_q2_models():
     print("Loading training data...")
-    train_sentences = parse_conllu(train_path)
+    train_sentences = parse_conllu(UD_ENGLISH_TRAIN)
     print(f"Loaded {len(train_sentences)} training sentences")
     
     print("Loading dev data...")
-    dev_sentences = parse_conllu(dev_path)
+    dev_sentences = parse_conllu(UD_ENGLISH_DEV)
     print(f"Loaded {len(dev_sentences)} dev sentences")
     
     print("Training parser...")
     parser = DependencyParser()
-    parser.train(train_sentences[:2000])
+    parser.train(train_sentences[:Q2_CONFIG["train_subset_size"]])
     
     print("Evaluating on dev set...")
-    las = evaluate_on_dev(parser, dev_sentences, 100)
+    las = evaluate_on_dev(parser, dev_sentences)
     print(f"LAS on dev set: {las:.4f}")
+    
+    return {
+        'parser': parser,
+        'dev_sentences': dev_sentences,
+        'las': las
+    }
+
+if __name__ == "__main__":
+    models = get_or_train("q2_models", train_q2_models, force_retrain=FORCE_RETRAIN)
+    print(f"LAS on dev set: {models['las']:.4f}")
