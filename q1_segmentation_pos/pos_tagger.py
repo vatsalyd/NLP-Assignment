@@ -1,6 +1,12 @@
 from collections import defaultdict
 import math
 
+def _default_int_dict():
+    return defaultdict(int)
+
+def _default_int():
+    return 0
+
 class POSTagger:
     def __init__(self, tags):
         self.tags = tags
@@ -8,12 +14,12 @@ class POSTagger:
         self.idx_to_tag = {i: tag for i, tag in enumerate(tags)}
         self.num_tags = len(tags)
         
-        self.emission_counts = defaultdict(lambda: defaultdict(int))
-        self.transition_counts = defaultdict(lambda: defaultdict(int))
-        self.start_counts = defaultdict(int)
-        self.second_start_counts = defaultdict(int)
-        self.total_emissions = defaultdict(int)
-        self.total_transitions = defaultdict(int)
+        self.emission_counts = defaultdict(_default_int_dict)
+        self.transition_counts = defaultdict(_default_int_dict)
+        self.start_counts = defaultdict(_default_int)
+        self.second_start_counts = defaultdict(_default_int)
+        self.total_emissions = defaultdict(_default_int)
+        self.total_transitions = defaultdict(_default_int)
         
     def train(self, tagged_sentences):
         for sent in tagged_sentences:
