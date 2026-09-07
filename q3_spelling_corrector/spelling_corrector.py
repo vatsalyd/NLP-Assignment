@@ -3,11 +3,45 @@ from nltk.corpus import brown
 from collections import defaultdict, Counter
 import random
 import math
+import sys
+sys.path.append('D:\\projects\\NLP-Assignment')
+from model_utils import get_or_train, CHECKPOINT_DIR
+
+FORCE_RETRAIN = False
 
 def load_brown_corpus():
     sentences = list(brown.sents())
     words = [word.lower() for sent in sentences for word in sent]
     return sentences, words
+
+def train_q3_models():
+    sentences, words = load_brown_corpus()
+    
+    vocab = set(words)
+    unigram_counts = Counter(words)
+    total_words = len(words)
+    unigram_probs = {w: c/total_words for w, c in unigram_counts.items()}
+    
+    bigram_counts = defaultdict(Counter)
+    for i in range(len(words)-1):
+        bigram_counts[words[i]][words[i+1]] += 1
+    
+    bigram_probs = {}
+    for w1, counter in bigram_counts.items():
+        total = sum(counter.values())
+        bigram_probs[w1] = {w2: c/total for w2, c in counter.items()}
+    
+    sym_delete = SymmetricDeleteCorrector(vocab, unigram_counts)
+    
+    return {
+        'vocab': vocab,
+        'unigram_counts': unigram_counts,
+        'unigram_probs': unigram_probs,
+        'bigram_probs': bigram_probs,
+        'sym_delete': sym_delete,
+        'words': words,
+        'sentences': sentences
+    }
 
 def build_models(words):
     vocab = set(words)
@@ -147,26 +181,19 @@ def evaluate_correction(test_cases, corrector_func, *extra_args):
     return correct / len(test_cases) if test_cases else 0
 
 if __name__ == "__main__":
-    print("Loading Brown corpus...")
-    sentences, words = load_brown_corpus()
-    print(f"Total words: {len(words)}")
-    
-    vocab, unigram_counts, unigram_probs, bigram_probs = build_models(words)
-    print(f"Vocabulary size: {len(vocab)}")
-    
-    print("\nBuilding symmetric delete dictionary...")
-    sym_delete = SymmetricDeleteCorrector(vocab, unigram_counts)
-    print(f"Delete dictionary size: {len(sym_delete.delete_dict)}")
+    print("Loading models...")
+    models = get_or_train("q3_models", train_q3_models, force_retrain=FORCE_RETRAIN)
+    print(f"Vocabulary size: {len(models['vocab'])}")
     
     print("\nGenerating test set...")
-    nonword_tests, realword_tests = generate_test_set(sentences, words, vocab)
+    nonword_tests, realword_tests = generate_test_set(models['sentences'], models['words'], models['vocab'])
     print(f"Non-word test cases: {len(nonword_tests)}")
     print(f"Real-word test cases: {len(realword_tests)}")
     
     print("\nEvaluating non-word correction...")
     nonword_acc = evaluate_correction(
         nonword_tests[:100],
-        lambda w: correct_nonword(w, vocab, unigram_counts, edit_distance_1, sym_delete)
+        lambda w: correct_nonword(w, models['vocab'], models['unigram_counts'], edit_distance_1, models['sym_delete'])
     )
     print(f"Non-word accuracy: {nonword_acc:.4f}")
     
@@ -174,7 +201,7 @@ if __name__ == "__main__":
     realword_correct = 0
     for sent, idx, target in realword_tests[:100]:
         prev = sent[idx-1].lower() if idx > 0 else ''
-        corrected = correct_realword(sent[idx].lower(), prev, vocab, unigram_counts, bigram_probs, edit_distance_1, sym_delete)
+        corrected = correct_realword(sent[idx].lower(), prev, models['vocab'], models['unigram_counts'], models['bigram_probs'], edit_distance_1, models['sym_delete'])
         if corrected == target:
             realword_correct += 1
     realword_acc = realword_correct / min(100, len(realword_tests))
@@ -186,9 +213,9 @@ if __name__ == "__main__":
     # Generate 1000 misspelled words
     test_words = []
     for _ in range(1000):
-        w = random.choice(words)
+        w = random.choice(models['words'])
         edits = list(edit_distance_1(w))
-        nonword_edits = [e for e in edits if e not in vocab]
+        nonword_edits = [e for e in edits if e not in models['vocab']]
         if nonword_edits:
             test_words.append(random.choice(nonword_edits))
         else:
@@ -197,13 +224,13 @@ if __name__ == "__main__":
     # Method A benchmark
     start = time.perf_counter()
     for w in test_words:
-        _ = edit_distance_1(w) & vocab
+        _ = edit_distance_1(w) & models['vocab']
     method_a_time = time.perf_counter() - start
     
     # Method B benchmark
     start = time.perf_counter()
     for w in test_words:
-        _ = sym_delete.get_candidates(w)
+        _ = models['sym_delete'].get_candidates(w)
     method_b_time = time.perf_counter() - start
     
     print(f"Method A (edit distance 1): {method_a_time:.6f}s")
