@@ -5,19 +5,6 @@ import math
 import sys
 import os
 import nltk
-
-# Download required NLTK data (for Streamlit Cloud deployment)
-@st.cache_resource
-def download_nltk_data():
-    """Download required NLTK datasets."""
-    for resource in ['brown', 'treebank', 'gutenberg', 'reuters', 'universal_tagset', 'punkt']:
-        try:
-            nltk.data.find(f'corpora/{resource}')
-        except LookupError:
-            nltk.download(resource, quiet=True)
-
-download_nltk_data()
-
 from nltk.corpus import brown, treebank, gutenberg, reuters
 
 # Add path for Q1 and Q3 modules
