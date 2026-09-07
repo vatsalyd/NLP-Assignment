@@ -3,16 +3,18 @@ import random
 import time
 import math
 import sys
+import os
 import nltk
 from nltk.corpus import brown, treebank, gutenberg, reuters
 
 # Add path for Q1 and Q3 modules
-sys.path.append('D:\\projects\\NLP-Assignment\\q1_segmentation_pos')
-sys.path.append('D:\\projects\\NLP-Assignment\\q3_spelling_corrector')
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
 
 from q1_segmentation_pos.corpus_loader import load_brown_corpus as load_brown_corpus_q1, extract_words_tags, build_vocabulary
 from q1_segmentation_pos.pos_tagger import POSTagger
 from q3_spelling_corrector.spelling_corrector import SymmetricDeleteCorrector, edit_distance_1, load_brown_corpus as load_brown_corpus_q3
+from config import Q4_CONFIG, Q3_CONFIG
 
 # Import shared models and functions
 from models import (
@@ -72,10 +74,10 @@ def run_speed_demon_benchmark(vocab, unigram_counts, bigram_probs, trigram_probs
     """Run Speed Demon benchmark for the full live-check pipeline."""
     import time
     
-    # Generate 200 simulated words (reduced for speed)
+    # Generate 1000 simulated words as per assignment requirements
     _, words = load_brown_corpus_q3()
     test_words = []
-    for _ in range(200):
+    for _ in range(Q3_CONFIG["speed_demon_num_words"]):
         w = random.choice(words)
         test_words.append(w)
     
@@ -100,7 +102,7 @@ def run_speed_demon_benchmark(vocab, unigram_counts, bigram_probs, trigram_probs
     avg_seg_spell = sum(seg_spell_latencies) / len(seg_spell_latencies)
     
     # Benchmark 2: Grammar trigger check only (every N words)
-    N = 10
+    N = Q4_CONFIG["trigger_interval"]
     trigger_latencies = []
     start = time.perf_counter()
     for i in range(0, len(test_words), N):
@@ -160,13 +162,13 @@ def main():
     # Sidebar for parameters
     with st.sidebar:
         st.write("### Parameters")
-        st.write("**Merge probability p = 0.08**")
+        st.write(f"**Merge probability p = {Q4_CONFIG['merge_probability']}**")
         st.write("Justification: Simulates realistic fast-typing spacebar miss rate (~8%)")
         st.write("")
-        st.write("**Trigger interval N = 10**")
+        st.write(f"**Trigger interval N = {Q4_CONFIG['trigger_interval']}**")
         st.write("Justification: Balances latency (checking every 10 words) with responsiveness")
         st.write("")
-        st.write("**Add-k smoothing k = 0.1**")
+        st.write(f"**Add-k smoothing k = {Q4_CONFIG['add_k_smoothing']}**")
         st.write("Justification: Standard small value for smoothing sparse n-grams")
         st.write("")
         st.write("**Tagset reconciliation**")
@@ -231,7 +233,7 @@ def main():
     # Live processing
     if st.session_state.get('run_live', False):
         tokens = st.session_state.tokens
-        merged_tokens = introduce_merges(tokens, 0.08)
+        merged_tokens = introduce_merges(tokens, Q4_CONFIG["merge_probability"])
         
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -243,7 +245,7 @@ def main():
         sentence_spell_counts = {}
         current_sentence_idx = 0
         
-        N = 10
+        N = Q4_CONFIG["trigger_interval"]
         
         for i, token in enumerate(merged_tokens):
             progress_bar.progress((i + 1) / len(merged_tokens))
@@ -253,7 +255,7 @@ def main():
             
             # SEGMENT-ALERT
             seg_alert_fired = False
-            if token not in vocab and len(token) > 5:
+            if token not in vocab and len(token) > Q4_CONFIG["merge_min_token_len"]:
                 seg_words = viterbi_segmentation(token, vocab, trigram_probs, unigram_probs)
                 if len(seg_words) > 1:
                     st.session_state.segmentation_count += 1
@@ -293,12 +295,12 @@ def main():
                 grammar_alert_fired = False
                 if pcfg_result:
                     pcfg_score = math.log(pcfg_result[0])
-                    if pcfg_score < -100:  # Very low probability
+                    if pcfg_score < Q4_CONFIG["pcfg_parse_threshold"]:  # Very low probability
                         alerts.append(f"[GRAMMAR-ALERT] Low PCFG probability: {pcfg_score:.2f} in '{' '.join(window)}'")
                         grammar_alert_fired = True
                 elif ngram_perp is not None:
                     # Fallback to n-gram perplexity
-                    if ngram_perp > 500:
+                    if ngram_perp > Q4_CONFIG["perplexity_high"]:
                         alerts.append(f"[GRAMMAR-ALERT] High trigram perplexity (fallback): {ngram_perp:.1f} in '{' '.join(window)}'")
                         grammar_alert_fired = True
                 
@@ -309,7 +311,8 @@ def main():
                         curr = flat_words[j]
                         if curr in vocab:
                             corrected = correct_realword(curr, prev, vocab, unigram_counts, 
-                                                         bigram_probs, edit_distance_1, sym_delete)
+                                                         bigram_probs, edit_distance_1, sym_delete,
+                                                         Q3_CONFIG["realword_threshold"])
                             if corrected != curr:
                                 alerts.append(f"[GRAMMAR-ALERT] Real-word: '{prev} {curr}' -> '{prev} {corrected}'")
             
@@ -384,21 +387,21 @@ def main():
                 tri_perp = ngram_model.perplexity(tokens, n=3)
                 
                 # Decision rule
-                if pcfg_result and pcfg_score > -100:
+                if pcfg_result and pcfg_score > Q4_CONFIG["pcfg_parse_threshold"]:
                     method = "PCFG"
-                    verdict = "Grammatical" if pcfg_score > -50 else "Questionable"
-                elif tri_perp < 200:
+                    verdict = "Grammatical" if pcfg_score > Q4_CONFIG["pcfg_grammatical_threshold"] else "Questionable"
+                elif tri_perp < Q4_CONFIG["perplexity_trigram_adequate"]:
                     method = "Trigram"
-                    verdict = "Grammatical" if tri_perp < 100 else "Questionable"
+                    verdict = "Grammatical" if tri_perp < Q4_CONFIG["perplexity_trigram_good"] else "Questionable"
                 else:
                     method = "Bigram"
-                    verdict = "Grammatical" if bi_perp < 150 else "Questionable"
+                    verdict = "Grammatical" if bi_perp < Q4_CONFIG["perplexity_bigram_good"] else "Questionable"
                 
                 seg_count = st.session_state.sentence_seg_counts.get(sent_idx, 0)
                 spell_count = st.session_state.sentence_spell_counts.get(sent_idx, 0)
                 
                 results.append({
-                    'sentence': sent[:80] + ('...' if len(sent) > 80 else ''),
+                    'sentence': sent[:Q4_CONFIG["sentence_display_max_chars"]] + ('...' if len(sent) > Q4_CONFIG["sentence_display_max_chars"] else ''),
                     'pcfg_score': f"{pcfg_score:.2f}" if pcfg_score != float('-inf') else "Unparseable",
                     'bigram_perp': f"{bi_perp:.2f}",
                     'trigram_perp': f"{tri_perp:.2f}",

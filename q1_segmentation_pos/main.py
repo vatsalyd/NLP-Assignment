@@ -1,31 +1,104 @@
 import sys
 sys.path.append('D:\\projects\\NLP-Assignment')
+sys.path.append('D:\\projects\\NLP-Assignment\\q1_segmentation_pos')
 
 from corpus_loader import load_brown_corpus, load_ud_spanish, extract_words_tags, build_vocabulary
 from trigram_lm import TrigramLanguageModel, viterbi_segmentation
 from pos_tagger import POSTagger, load_ud_spanish_morph
 from baselines import GreedyLongestMatchSegmenter, MostFrequentTagger
 from evaluation import compute_accuracy, compute_confusion_matrix, print_confusion_matrix, error_source_analysis, evaluate_segmentation
+from model_utils import get_or_train, CHECKPOINT_DIR
+from config import Q1_CONFIG, UD_SPANISH_TRAIN, UD_SPANISH_DEV, UD_SPANISH_TEST
 
-def run_english():
-    print("=" * 60)
-    print("ENGLISH - Question 1")
-    print("=" * 60)
-    
-    train_sents, test_sents = load_brown_corpus(0.8)
+FORCE_RETRAIN = False
+
+def train_english_models():
+    train_sents, test_sents = load_brown_corpus(Q1_CONFIG["brown_train_split"])
     train_words, train_tags = extract_words_tags(train_sents)
-    test_words, test_tags = extract_words_tags(test_sents)
     
     vocab = build_vocabulary(train_words)
-    print(f"Vocabulary size: {len(vocab)}")
-    print(f"Train sentences: {len(train_sents)}, Test sentences: {len(test_sents)}")
-    
     lm = TrigramLanguageModel(vocab)
     lm.train(train_words)
     
     tags = sorted(set(train_tags))
     pos_tagger = POSTagger(tags)
     pos_tagger.train(train_sents)
+    
+    return {
+        'vocab': vocab, 'lm': lm, 'pos_tagger': pos_tagger,
+        'train_sents': train_sents, 'test_sents': test_sents,
+        'train_words': train_words, 'train_tags': train_tags,
+        'tags': tags
+    }
+
+def train_spanish_models():
+    train_sents, dev_sents, test_sents = load_ud_spanish(
+        UD_SPANISH_TRAIN, UD_SPANISH_DEV, UD_SPANISH_TEST
+    )
+    train_words, train_tags = extract_words_tags(train_sents)
+    test_path = "D:/projects/NLP-Assignment/data/UD_Spanish-GSD/es_gsd-ud-test.conllu"
+    
+    train_sents, dev_sents, test_sents = load_ud_spanish(train_path, dev_path, test_path)
+    train_words, train_tags = extract_words_tags(train_sents)
+    
+    vocab = build_vocabulary(train_words)
+    lm = TrigramLanguageModel(vocab)
+    lm.train(train_words)
+    
+    tags = sorted(set(train_tags))
+    pos_tagger = POSTagger(tags)
+    pos_tagger.train(train_sents)
+    
+    return {
+        'vocab': vocab, 'lm': lm, 'pos_tagger': pos_tagger,
+        'train_sents': train_sents, 'dev_sents': dev_sents, 'test_sents': test_sents,
+        'train_words': train_words, 'train_tags': train_tags,
+        'tags': tags
+    }
+
+def train_spanish_morph_models():
+    train_sents, dev_sents, test_sents = load_ud_spanish_morph(
+        UD_SPANISH_TRAIN, UD_SPANISH_DEV, UD_SPANISH_TEST
+    )
+    train_words, train_tags = extract_words_tags(train_sents)
+    
+    vocab = build_vocabulary(train_words)
+    lm = TrigramLanguageModel(vocab)
+    lm.train(train_words)
+    
+    tags = sorted(set(train_tags))
+    pos_tagger = POSTagger(tags)
+    pos_tagger.train(train_sents)
+    
+    return {
+        'vocab': vocab, 'lm': lm, 'pos_tagger': pos_tagger,
+        'train_sents': train_sents, 'dev_sents': dev_sents, 'test_sents': test_sents,
+        'train_words': train_words, 'train_tags': train_tags,
+        'tags': tags
+    }
+
+def run_english():
+    print("=" * 60)
+    print("ENGLISH - Question 1")
+    print("=" * 60)
+    
+    models = get_or_train(
+        "q1_english_models",
+        train_english_models,
+        force_retrain=FORCE_RETRAIN
+    )
+    
+    vocab = models['vocab']
+    lm = models['lm']
+    pos_tagger = models['pos_tagger']
+    train_sents = models['train_sents']
+    test_sents = models['test_sents']
+    train_words = models['train_words']
+    train_tags = models['train_tags']
+    tags = models['tags']
+    
+    print(f"Vocabulary size: {len(vocab)}")
+    print(f"Train sentences: {len(train_sents)}, Test sentences: {len(test_sents)}")
     
     print("\n--- Sample Test Strings ---")
     test_strings = [
@@ -39,13 +112,14 @@ def run_english():
         pos_tags = pos_tagger.viterbi_decode(seg_words)
         print(f"POS tags: {list(zip(seg_words, pos_tags))}")
     
-    print("\n--- Evaluation on Test Set ---")
+    eval_size = Q1_CONFIG["eval_sample_size"]
+    
     all_pred_words = []
     all_gold_words = []
     all_pred_tags = []
     all_gold_tags = []
     
-    for sent in test_sents[:100]:
+    for sent in test_sents[:eval_size]:
         gold_words = [w.lower() for w, _ in sent]
         gold_tags = [t for _, t in sent]
         text = ''.join(gold_words)
@@ -71,13 +145,13 @@ def run_english():
     print(f"Genuine tagging errors: {tag_err}")
     
     print("\n--- Baselines ---")
-    greedy_seg = GreedyLongestMatchSegmenter(vocab)
+    greedy_seg = GreedyLongestMatchSegmenter(vocab, Q1_CONFIG["baseline_greedy_max_len"])
     mft_tagger = MostFrequentTagger()
     mft_tagger.train(train_sents)
     
     baseline_pred_words = []
     baseline_pred_tags = []
-    for sent in test_sents[:100]:
+    for sent in test_sents[:eval_size]:
         gold_words = [w.lower() for w, _ in sent]
         gold_tags = [t for _, t in sent]
         text = ''.join(gold_words)
@@ -100,23 +174,24 @@ def run_spanish():
     print("SPANISH - Question 1")
     print("=" * 60)
     
-    train_path = "D:/projects/NLP-Assignment/data/UD_Spanish-GSD/es_gsd-ud-train.conllu"
-    dev_path = "D:/projects/NLP-Assignment/data/UD_Spanish-GSD/es_gsd-ud-dev.conllu"
-    test_path = "D:/projects/NLP-Assignment/data/UD_Spanish-GSD/es_gsd-ud-test.conllu"
+    models = get_or_train(
+        "q1_spanish_models",
+        train_spanish_models,
+        force_retrain=FORCE_RETRAIN
+    )
     
-    train_sents, dev_sents, test_sents = load_ud_spanish(train_path, dev_path, test_path)
-    train_words, train_tags = extract_words_tags(train_sents)
+    vocab = models['vocab']
+    lm = models['lm']
+    pos_tagger = models['pos_tagger']
+    train_sents = models['train_sents']
+    dev_sents = models['dev_sents']
+    test_sents = models['test_sents']
+    train_words = models['train_words']
+    train_tags = models['train_tags']
+    tags = models['tags']
     
-    vocab = build_vocabulary(train_words)
     print(f"Vocabulary size: {len(vocab)}")
     print(f"Train sentences: {len(train_sents)}")
-    
-    lm = TrigramLanguageModel(vocab)
-    lm.train(train_words)
-    
-    tags = sorted(set(train_tags))
-    pos_tagger = POSTagger(tags)
-    pos_tagger.train(train_sents)
     
     print("\n--- Sample Test Strings ---")
     test_strings = [
@@ -131,13 +206,14 @@ def run_spanish():
         pos_tags = pos_tagger.viterbi_decode(seg_words)
         print(f"POS tags: {list(zip(seg_words, pos_tags))}")
     
-    print("\n--- Evaluation on Dev Set ---")
+    eval_size = Q1_CONFIG["eval_sample_size"]
+    
     all_pred_words = []
     all_gold_words = []
     all_pred_tags = []
     all_gold_tags = []
     
-    for sent in dev_sents[:100]:
+    for sent in dev_sents[:eval_size]:
         gold_words = [w.lower() for w, _ in sent]
         gold_tags = [t for _, t in sent]
         text = ''.join(gold_words)
@@ -163,13 +239,13 @@ def run_spanish():
     print(f"Genuine tagging errors: {tag_err}")
     
     print("\n--- Baselines ---")
-    greedy_seg = GreedyLongestMatchSegmenter(vocab)
+    greedy_seg = GreedyLongestMatchSegmenter(vocab, Q1_CONFIG["baseline_greedy_max_len"])
     mft_tagger = MostFrequentTagger()
     mft_tagger.train(train_sents)
     
     baseline_pred_words = []
     baseline_pred_tags = []
-    for sent in dev_sents[:100]:
+    for sent in dev_sents[:eval_size]:
         gold_words = [w.lower() for w, _ in sent]
         gold_tags = [t for _, t in sent]
         text = ''.join(gold_words)
@@ -192,23 +268,24 @@ def run_spanish_morph():
     print("SPANISH MORPHOLOGY-AWARE - Question 1 Part 3")
     print("=" * 60)
     
-    train_path = "D:/projects/NLP-Assignment/data/UD_Spanish-GSD/es_gsd-ud-train.conllu"
-    dev_path = "D:/projects/NLP-Assignment/data/UD_Spanish-GSD/es_gsd-ud-dev.conllu"
-    test_path = "D:/projects/NLP-Assignment/data/UD_Spanish-GSD/es_gsd-ud-test.conllu"
+    models = get_or_train(
+        "q1_spanish_morph_models",
+        train_spanish_morph_models,
+        force_retrain=FORCE_RETRAIN
+    )
     
-    train_sents, dev_sents, test_sents = load_ud_spanish_morph(train_path, dev_path, test_path)
-    train_words, train_tags = extract_words_tags(train_sents)
+    vocab = models['vocab']
+    lm = models['lm']
+    pos_tagger = models['pos_tagger']
+    train_sents = models['train_sents']
+    dev_sents = models['dev_sents']
+    test_sents = models['test_sents']
+    train_words = models['train_words']
+    train_tags = models['train_tags']
+    tags = models['tags']
     
-    vocab = build_vocabulary(train_words)
     print(f"Vocabulary size: {len(vocab)}")
     print(f"Unique tags: {len(set(train_tags))}")
-    
-    lm = TrigramLanguageModel(vocab)
-    lm.train(train_words)
-    
-    tags = sorted(set(train_tags))
-    pos_tagger = POSTagger(tags)
-    pos_tagger.train(train_sents)
     
     print("\n--- Sample Test Strings ---")
     test_strings = [
@@ -223,13 +300,14 @@ def run_spanish_morph():
         pos_tags = pos_tagger.viterbi_decode(seg_words)
         print(f"POS tags: {list(zip(seg_words, pos_tags))}")
     
-    print("\n--- Evaluation on Dev Set ---")
+    eval_size = Q1_CONFIG["eval_sample_size"]
+    
     all_pred_words = []
     all_gold_words = []
     all_pred_tags = []
     all_gold_tags = []
     
-    for sent in dev_sents[:100]:
+    for sent in dev_sents[:eval_size]:
         gold_words = [w.lower() for w, _ in sent]
         gold_tags = [t for _, t in sent]
         text = ''.join(gold_words)
@@ -250,4 +328,6 @@ def run_spanish_morph():
 if __name__ == "__main__":
     run_english()
     run_spanish()
+    run_spanish_morph()
+    run_spanish_morph()
     run_spanish_morph()
