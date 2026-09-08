@@ -1,5 +1,13 @@
 # NLP Group Assignment
 
+## Team Members
+
+- **Vatsal Yadav** — Q4 Integrated Background Editor, PCFG Parser, Configuration (`config.py`), Comparative Analysis Report
+- **Rudra Mehul Dudhat** — Q3 Spelling Corrector (Methods A & B, Symmetric Delete, CLI), Model Checkpointing (`model_utils.py`)
+- **Mohak Arya** — Q2 Dependency Parser (Features, Classifier, Parser Loop), Q2 Checkpointing & Config Integration
+- **Kanishk Nandeshwar** — Q2 Dependency Parser (CoNLL-U Parser, Arc-Standard Transition System), Q2 Report
+- **Arnav Mishra** — Q1 Word Segmentation & POS Tagging (Trigram LM, Viterbi, POS Tagger, Morphology-aware), Q1 Report, Documentation
+
 ## Setup
 
 ```bash
@@ -21,13 +29,13 @@ python -c "import nltk; nltk.download('brown'); nltk.download('treebank'); nltk.
 
 ## Requirements
 
-Create `requirements.txt`:
+`requirements.txt` is included:
 ```
-streamlit
-nltk
-scikit-learn
-numpy
-pandas
+streamlit>=1.28.0
+nltk>=3.8
+scikit-learn>=1.3.0
+numpy>=1.24.0
+pandas>=2.0.0
 ```
 
 ## Running Each Question
@@ -112,3 +120,13 @@ git branch -a
 # pr/documentation       - Q1/Q2 reports
 # pr/final-integration   - All combined
 ```
+
+## Troubleshooting
+
+| Error | Fix |
+|-------|-----|
+| `AttributeError: '_emission_vocab_size'` | Delete `checkpoints/q1_*.pkl` and re-run Q1 |
+| `LookupError: brown` | Re-run NLTK download command |
+| `ModuleNotFoundError` | Ensure `pip install -r requirements.txt` succeeded |
+| Spanish data not found | Verify `data/UD_Spanish-GSD/` exists |
+| `NameError: train_path` (Q1 Spanish) | Fixed in latest commit - re-pull and re-run |
