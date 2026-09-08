@@ -20,7 +20,8 @@ class POSTagger:
         self.second_start_counts = defaultdict(_default_int)
         self.total_emissions = defaultdict(_default_int)
         self.total_transitions = defaultdict(_default_int)
-        
+        self._emission_vocab_size = 0
+
     def train(self, tagged_sentences):
         for sent in tagged_sentences:
             if not sent:
@@ -41,10 +42,11 @@ class POSTagger:
                     self.second_start_counts[(prev2_tag, tag)] += 1
                 
                 prev2_tag, prev_tag = prev_tag, tag
-    
+
+        self._emission_vocab_size = sum(len(v) for v in self.emission_counts.values())
+
     def emission_prob(self, tag, word, k=1.0):
-        vocab_size = sum(len(v) for v in self.emission_counts.values())
-        return (self.emission_counts[tag].get(word, 0) + k) / (self.total_emissions[tag] + k * vocab_size)
+        return (self.emission_counts[tag].get(word, 0) + k) / (self.total_emissions[tag] + k * self._emission_vocab_size)
     
     def transition_prob(self, prev2_tag, prev_tag, tag, k=1.0):
         if prev2_tag == '<START>' and prev_tag == '<START>':
