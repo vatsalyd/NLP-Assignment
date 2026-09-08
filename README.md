@@ -23,7 +23,7 @@ cd NLP-Assignment
 python -m venv venv
 
 # Windows PowerShell:
-venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 
 # Linux/Mac/Git Bash:
 source venv/bin/activate
@@ -70,6 +70,10 @@ python download_nltk.py
 - Re-run `python download_nltk.py` (resumes partial downloads)
 - Check firewall/antivirus isn't blocking Python
 - Try: `python -m nltk.downloader brown treebank gutenberg reuters universal_tagset punkt`
+- **Fallback one-liner (sets local data dir & downloads all):**
+  ```bash
+  python -c "import nltk, os; d=os.path.abspath('nltk_data'); nltk.data.path[:] = [d]; [nltk.download(x, download_dir=d) for x in ['brown', 'treebank', 'gutenberg', 'reuters', 'universal_tagset', 'punkt']]"
+  ```
 
 ---
 
@@ -78,8 +82,15 @@ python download_nltk.py
 **Note:** Folder names use lowercase with underscores (e.g., `q1_segmentation_pos`)
 
 ### Q1: Word Segmentation & POS Tagging
-```bash
+```powershell
 cd q1_segmentation_pos
+
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+python main.py
+
+# Linux/Mac/Git Bash:
+source venv/bin/activate
 python main.py
 ```
 **Outputs:** Segmentation/POS accuracy, confusion matrix, error source analysis, Spanish morphology-aware tagging (86 tags), baseline comparisons
@@ -88,28 +99,58 @@ python main.py
 **Subsequent runs:** Loads from checkpoints instantly
 
 ### Q2: Transition-Based Dependency Parser
-```bash
+```powershell
 cd q2_dependency_parser
+
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+python parser.py
+
+# Linux/Mac/Git Bash:
+source venv/bin/activate
 python parser.py
 ```
 **Outputs:** LAS score (30.3% on 100 dev sentences), sample predictions with gold comparison, training statistics
 
 ### Q3: Spelling Corrector
-```bash
+```powershell
 cd q3_spelling_corrector
+
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+python spelling_corrector.py
+
+# Linux/Mac/Git Bash:
+source venv/bin/activate
 python spelling_corrector.py
 ```
 **Outputs:** Method A (Edit Distance 1) vs Method B (Symmetric Delete) comparison, non-word/real-word accuracy, Speed Demon benchmark (1000 words)
 
 **Interactive CLI:**
-```bash
+```powershell
+cd q3_spelling_corrector
+
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
 python cli.py
+
+# Linux/Mac/Git Bash:
+source venv/bin/activate
+python cli.py
+
 # Type sentences to correct in real-time (type 'exit' to quit)
 ```
 
 ### Q4: Integrated Background Editor (Streamlit App)
-```bash
+```powershell
 cd q4_integrated_editor
+
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+streamlit run app.py
+
+# Linux/Mac/Git Bash:
+source venv/bin/activate
 streamlit run app.py
 ```
 Opens browser at `http://localhost:8501`
