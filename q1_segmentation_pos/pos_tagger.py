@@ -46,7 +46,10 @@ class POSTagger:
         self._emission_vocab_size = sum(len(v) for v in self.emission_counts.values())
 
     def emission_prob(self, tag, word, k=1.0):
-        return (self.emission_counts[tag].get(word, 0) + k) / (self.total_emissions[tag] + k * self._emission_vocab_size)
+        vocab_size = getattr(self, '_emission_vocab_size', 0)
+        if vocab_size == 0:
+            vocab_size = sum(len(v) for v in self.emission_counts.values())
+        return (self.emission_counts[tag].get(word, 0) + k) / (self.total_emissions[tag] + k * vocab_size)
     
     def transition_prob(self, prev2_tag, prev_tag, tag, k=1.0):
         if prev2_tag == '<START>' and prev_tag == '<START>':

@@ -38,10 +38,6 @@ def train_spanish_models():
         UD_SPANISH_TRAIN, UD_SPANISH_DEV, UD_SPANISH_TEST
     )
     train_words, train_tags = extract_words_tags(train_sents)
-    test_path = "D:/projects/NLP-Assignment/data/UD_Spanish-GSD/es_gsd-ud-test.conllu"
-    
-    train_sents, dev_sents, test_sents = load_ud_spanish(train_path, dev_path, test_path)
-    train_words, train_tags = extract_words_tags(train_sents)
     
     vocab = build_vocabulary(train_words)
     lm = TrigramLanguageModel(vocab)
@@ -330,6 +326,4 @@ def run_spanish_morph():
 if __name__ == "__main__":
     run_english()
     run_spanish()
-    run_spanish_morph()
-    run_spanish_morph()
     run_spanish_morph()
