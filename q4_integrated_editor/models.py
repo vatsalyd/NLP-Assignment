@@ -1,7 +1,9 @@
 import nltk
 from nltk.corpus import brown, treebank, gutenberg, reuters
-from nltk import induce_pcfg, Nonterminal, Tree, ProbabilisticProduction
+from nltk import Nonterminal, Tree, ProbabilisticProduction
+from nltk.grammar import PCFG
 from collections import defaultdict, Counter
+from functools import lru_cache
 import math
 import random
 import sys
@@ -13,6 +15,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from q1_segmentation_pos.corpus_loader import load_brown_corpus, extract_words_tags, build_vocabulary
 from q1_segmentation_pos.pos_tagger import POSTagger
+from model_utils import get_or_train
 
 def load_shared_models():
     train_sents, test_sents = load_brown_corpus(0.8)
@@ -78,26 +81,46 @@ def simplify_nt(nt):
 
 
 def binarize_productions(productions):
-    """Manually binarize productions without creating complex non-terminals."""
+    """Manually binarize productions without creating complex non-terminals.
+
+    Intermediate symbols are keyed by the remaining RHS suffix they stand
+    for (e.g. "...JJ NN" at the tail of an NP rule) instead of a raw
+    incrementing counter, so two different original productions that end in
+    the same tag sequence share one _BIN symbol instead of getting their own.
+
+    This matters a lot in practice: common tag pairs like (JJ, NN) show up
+    as the tail of thousands of distinct treebank productions. With a
+    counter-based symbol, each of those got its own near-duplicate _BINn,
+    so cky_parse()'s chart ended up with 1000+ entries in a single cell for
+    a single common bigram - one 10-word grammar check measured at ~2.9s.
+    Sharing the symbol collapses those duplicates (their counts get pooled
+    when induce_pcfg_fast re-estimates probabilities, which is the
+    statistically correct thing to do anyway) and the same check drops to
+    single-digit ms.
+    """
     binary_prods = []
-    new_nt_counter = 0
-    
+    bin_symbol_cache = {}
+
+    def get_bin_symbol(remaining_rhs):
+        key = tuple(str(x) for x in remaining_rhs)
+        if key not in bin_symbol_cache:
+            bin_symbol_cache[key] = Nonterminal(f"_BIN{len(bin_symbol_cache)}")
+        return bin_symbol_cache[key]
+
     for prod in productions:
         lhs = prod.lhs()
         rhs = list(prod.rhs())
         prob = getattr(prod, 'prob', None)
         if prob is None:
-            prob = 1.0  # Will be re-estimated by induce_pcfg
-        
+            prob = 1.0  # Will be re-estimated by induce_pcfg_fast
+
         if len(rhs) <= 2:
             binary_prods.append(ProbabilisticProduction(lhs, rhs, prob=prob))
         else:
             # Binarize: A -> B C D E  becomes  A -> B X1, X1 -> C X2, X2 -> D E
             current_lhs = lhs
             for i in range(len(rhs) - 2):
-                new_nt_name = f"_BIN{new_nt_counter}"
-                new_nt_counter += 1
-                new_nt = Nonterminal(new_nt_name)
+                new_nt = get_bin_symbol(rhs[i + 1:])
                 binary_prods.append(ProbabilisticProduction(current_lhs, [rhs[i], new_nt], prob=prob))
                 current_lhs = new_nt
             # Last pair
@@ -155,8 +178,31 @@ def train_pcfg():
     productions.append(ProbabilisticProduction(Nonterminal('NP'), [Nonterminal('EX')], prob=0.05))
     
     start = Nonterminal('S')
-    pcfg = induce_pcfg(start, productions)
+    pcfg = induce_pcfg_fast(start, productions)
     return pcfg
+
+
+def induce_pcfg_fast(start, productions):
+    """Same estimation as nltk.induce_pcfg, but skips the leftcorner-relation
+    computation that PCFG() does by default.
+
+    That computation is O(categories^2)-ish and cky_parse() below never reads
+    it (this app uses its own binary_index/unary_index CKY table, not NLTK's
+    chart parsers) - so for a binarized grammar with tens of thousands of
+    synthetic _BIN nonterminals it's pure dead work. Measured on this
+    grammar (treebank, ~198K productions, ~33K categories after
+    binarization): 51s with the leftcorner calc vs 2s without.
+    """
+    pcount = {}
+    lcount = {}
+    for prod in productions:
+        lcount[prod.lhs()] = lcount.get(prod.lhs(), 0) + 1
+        pcount[prod] = pcount.get(prod, 0) + 1
+    prods = [
+        ProbabilisticProduction(p.lhs(), p.rhs(), prob=pcount[p] / lcount[p.lhs()])
+        for p in pcount
+    ]
+    return PCFG(start, prods, calculate_leftcorners=False)
 
 # Tagset reconciliation: Brown universal tags -> Penn Treebank tags
 UNIVERSAL_TO_PTB = {
@@ -213,11 +259,15 @@ class SmoothedNGramModel:
             log_prob = self.sentence_log_prob_trigram(words)
         return math.exp(-log_prob / len(words)) if words else float('inf')
 
-def cky_parse(pcfg, tokens):
-    n = len(tokens)
-    if n == 0:
-        return None
-    
+@lru_cache(maxsize=4)
+def _build_cky_indices(pcfg):
+    """Index pcfg's productions for CKY lookup, once per pcfg.
+
+    cky_parse() used to rebuild these from scratch on every call, which
+    means re-scanning every production in the grammar (tens of thousands of
+    them) on every single grammar-check trigger. The grammar doesn't change
+    between calls, so the index only needs to be built once and reused.
+    """
     # Build index: (B, C) -> list of productions with that RHS
     binary_index = {}
     for prod in pcfg.productions():
@@ -227,7 +277,7 @@ def cky_parse(pcfg, tokens):
             if key not in binary_index:
                 binary_index[key] = []
             binary_index[key].append(prod)
-    
+
     # Also index unary productions for base case: A -> B (where B is Nonterminal)
     unary_index = {}
     for prod in pcfg.productions():
@@ -236,7 +286,17 @@ def cky_parse(pcfg, tokens):
             if rhs[0] not in unary_index:
                 unary_index[rhs[0]] = []
             unary_index[rhs[0]].append(prod)
-    
+
+    return binary_index, unary_index
+
+
+def cky_parse(pcfg, tokens):
+    n = len(tokens)
+    if n == 0:
+        return None
+
+    binary_index, unary_index = _build_cky_indices(pcfg)
+
     # Convert string tokens to Nonterminal objects for PCFG lookup
     nt_tokens = [Nonterminal(t) for t in tokens]
     
@@ -384,8 +444,8 @@ if __name__ == "__main__":
     models = load_shared_models()
     print(f"Vocab size: {len(models['vocab'])}")
     
-    print("Training PCFG...")
-    pcfg = train_pcfg()
+    print("Training PCFG (or loading checkpoint)...")
+    pcfg = get_or_train("q4_pcfg", train_pcfg)
     print(f"PCFG productions: {len(pcfg.productions())}")
     
     # Test

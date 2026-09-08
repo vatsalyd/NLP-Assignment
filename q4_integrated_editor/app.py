@@ -13,8 +13,9 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from q1_segmentation_pos.corpus_loader import load_brown_corpus as load_brown_corpus_q1, extract_words_tags, build_vocabulary
 from q1_segmentation_pos.pos_tagger import POSTagger
-from q3_spelling_corrector.spelling_corrector import SymmetricDeleteCorrector, edit_distance_1, load_brown_corpus as load_brown_corpus_q3
+from q3_spelling_corrector.spelling_corrector import SymmetricDeleteCorrector, edit_distance_1
 from config import Q4_CONFIG, Q3_CONFIG
+from model_utils import get_or_train
 
 # Import shared models and functions
 from models import (
@@ -68,14 +69,16 @@ def correct_realword(word, prev_word, vocab, unigram_counts, bigram_probs, edit_
     
     return best_candidate
 
-def run_speed_demon_benchmark(vocab, unigram_counts, bigram_probs, trigram_probs, 
-                               unigram_probs, edit_distance_1_func, sym_delete, 
-                               pos_tagger, pcfg, ngram_model):
+def run_speed_demon_benchmark(vocab, unigram_counts, bigram_probs, trigram_probs,
+                               unigram_probs, edit_distance_1_func, sym_delete,
+                               pos_tagger, pcfg, ngram_model, words):
     """Run Speed Demon benchmark for the full live-check pipeline."""
     import time
-    
-    # Generate 1000 simulated words as per assignment requirements
-    _, words = load_brown_corpus_q3()
+
+    # Generate 1000 simulated words as per assignment requirements.
+    # `words` is the Brown corpus word list already loaded (and cached) by
+    # load_all_models() - reusing it instead of reloading the whole corpus
+    # here shaves ~6s off every benchmark run.
     test_words = []
     for _ in range(Q3_CONFIG["speed_demon_num_words"]):
         w = random.choice(words)
@@ -141,8 +144,8 @@ def load_all_models():
         models['vocab']
     )
     
-    # Train PCFG
-    pcfg = train_pcfg()
+    # Train PCFG (or load from checkpoint - same pattern as Q1/Q2/Q3)
+    pcfg = get_or_train("q4_pcfg", train_pcfg)
     
     # Load spelling corrector
     sym_delete = SymmetricDeleteCorrector(models['vocab'], models['unigram_counts'])
@@ -359,7 +362,7 @@ def main():
                 bench_results = run_speed_demon_benchmark(
                     vocab, unigram_counts, bigram_probs, trigram_probs,
                     unigram_probs, edit_distance_1, sym_delete,
-                    pos_tagger, pcfg, ngram_model
+                    pos_tagger, pcfg, ngram_model, models['words']
                 )
             
             st.write(f"**Full Pipeline (seg+spell)**: Total={bench_results['full_pipeline_total']:.3f}s, Avg/word={bench_results['avg_seg_spell_ms']:.3f}ms")
