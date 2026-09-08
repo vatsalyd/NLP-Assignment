@@ -202,19 +202,7 @@ All hyperparameters in `config.py`:
 
 ---
 
-## Git Branches (for review)
 
-```bash
-git branch -a
-# pr/infrastructure      - config.py, model_utils.py
-# pr/q1-improvements     - Q1 checkpointing, reports
-# pr/q2-improvements     - Q2 checkpointing, reports
-# pr/q3-improvements     - Q3 1000-word benchmark
-# pr/q4-improvements     - Q4 full config integration
-# pr/documentation       - Q1/Q2 reports
-# pr/final-integration   - All combined
-# fix/nltk-and-readme    - NLTK downloader + README updates (this branch)
-```
 
 ---
 
