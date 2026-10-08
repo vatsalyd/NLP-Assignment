@@ -248,7 +248,7 @@ def main():
     with col2:
         if st.button("Start Live Processing (Batch)"):
             st.session_state.run_live = True
-    
+
     with col3:
         if st.button("Manual Live Typing (User Input)"):
             st.session_state.user_typing_mode = True
@@ -260,10 +260,10 @@ def main():
             st.session_state.grammar_latencies = []
             st.rerun()
     
-    # Manual Live Typing - User types freely
+    # Manual Live Typing - User types freely with real-time alerts
     if st.session_state.get('user_typing_mode', False):
         st.write("### Manual Live Typing (User Input)")
-        st.write("Type in the text area below. Alerts will appear in real-time as you type.")
+        st.write("Type in the text area below. Alerts will appear as you type (processed on each change).")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -273,25 +273,10 @@ def main():
         with col2:
             show_alerts = st.checkbox("Show Alerts", value=True)
         
-        # Text area for user input
-        user_text = st.text_area(
-            "Start typing here...",
-            value=st.session_state.get('user_text', ''),
-            height=200,
-            key="user_typing_input",
-            on_change=None
-        )
-        
-        # Update session state when text changes
-        if 'user_text' not in st.session_state:
-            st.session_state.user_text = ""
-        
-        # Check if text changed
-        if user_text != st.session_state.user_text:
-            st.session_state.user_text = user_text
-            
-            # Process alerts on the new text
-            text = user_text
+        # Text area with on_change callback for real-time alert processing
+        def process_text():
+            text = st.session_state.get('user_typing_input', '')
+            st.session_state.user_text = text
             words = text.split()
             
             # SEGMENT-ALERT: Check for merged/unknown words
@@ -329,6 +314,19 @@ def main():
                     alert_msg = f"[GRAMMAR-ALERT] High trigram perplexity: {ngram_perp:.1f}"
                     if alert_msg not in st.session_state.alerts:
                         st.session_state.alerts.append(alert_msg)
+        
+        # Text area with on_change callback for real-time alert processing
+        user_text = st.text_area(
+            "Start typing here... alerts appear as you type (processed on each change)",
+            value=st.session_state.get('user_text', ''),
+            height=200,
+            key="user_typing_input",
+            on_change=process_text
+        )
+        
+        # Initialize session state
+        if 'user_text' not in st.session_state:
+            st.session_state.user_text = ""
         
         # Display live stats
         col1, col2, col3 = st.columns(3)
