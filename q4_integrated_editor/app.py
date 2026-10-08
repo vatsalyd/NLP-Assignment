@@ -349,6 +349,21 @@ def main():
     
 # Live processing
     if st.session_state.get('run_live', False):
+        tokens = st.session_state.tokens
+        merged_tokens = introduce_merges(tokens, Q4_CONFIG["merge_probability"])
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        alert_container = st.empty()
+        
+        processed = []
+        alerts = []
+        sentence_seg_counts = {}
+        sentence_spell_counts = {}
+        current_sentence_idx = 0
+        
+        N = Q4_CONFIG["trigger_interval"]
+        
         for i, token in enumerate(merged_tokens):
             progress_bar.progress((i + 1) / len(merged_tokens))
             status_text.text(f"Processing token {i+1}/{len(merged_tokens)}: {token}")
