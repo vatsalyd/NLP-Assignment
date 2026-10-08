@@ -260,10 +260,10 @@ def main():
             st.session_state.grammar_latencies = []
             st.rerun()
     
-    # Manual Live Typing - User types freely with real-time alerts
+# Manual Live Typing - User types freely with REAL-TIME alerts (like Google search)
     if st.session_state.get('user_typing_mode', False):
         st.write("### Manual Live Typing (User Input)")
-        st.write("Type in the text area below. Alerts will appear as you type (processed on each change).")
+        st.write("Type in the text area below. Alerts appear **instantly** as you type (like Google search).")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -273,10 +273,59 @@ def main():
         with col2:
             show_alerts = st.checkbox("Show Alerts", value=True)
         
-        # Text area with on_change callback for real-time alert processing
-        def process_text():
-            text = st.session_state.get('user_typing_input', '')
-            st.session_state.user_text = text
+        # Real-time typing with JavaScript - captures EVERY keystroke instantly
+        if 'user_text' not in st.session_state:
+            st.session_state.user_text = ""
+        
+        # Custom HTML/JS component for REAL-TIME keystroke capture (like Google search)
+        components.html(f"""
+        <div style="margin: 10px 0;">
+            <textarea 
+                id="realtime-textarea" 
+                style="width: 100%; height: 200px; padding: 10px; font-family: monospace; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;"
+                placeholder="Start typing here... alerts appear instantly as you type..."
+                oninput="sendToStreamlit(this.value)"
+            ></textarea>
+            <div id="status" style="margin-top: 5px; font-size: 12px; color: #666;">Ready - type to see real-time alerts</div>
+        </div>
+        
+        <script>
+        let debounceTimer = null;
+        
+        function sendToStreamlit(text) {{
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {{
+                // Update Streamlit via query params - triggers instant rerun
+                const params = new URLSearchParams(window.location.search);
+                params.set('user_text', text);
+                params.set('trigger', Date.now().toString());
+                window.location.search = params.toString();
+            }}, 0); // ZERO debounce - instant like Google
+        }}
+        
+        // Initialize with current text from URL
+        const textarea = document.getElementById('realtime-textarea');
+        const urlParams = new URLSearchParams(window.location.search);
+        const savedText = urlParams.get('user_text');
+        if (savedText) {{
+            textarea.value = savedText;
+        }}
+        </script>
+        """, height=250)
+        
+        # Read text from query params (set by JavaScript in real-time)
+        query_params = st.query_params
+        current_text = query_params.get('user_text', '')
+        
+        # Update session state when text changes (instant via URL params)
+        if 'user_text' not in st.session_state:
+            st.session_state.user_text = ""
+        
+        if current_text != st.session_state.user_text:
+            st.session_state.user_text = current_text
+            
+            # Process alerts on the new text INSTANTLY
+            text = current_text
             words = text.split()
             
             # SEGMENT-ALERT: Check for merged/unknown words
@@ -308,25 +357,12 @@ def main():
                     pcfg_score = math.log(pcfg_result[0])
                     if pcfg_score < Q4_CONFIG["pcfg_parse_threshold"]:
                         alert_msg = f"[GRAMMAR-ALERT] Low PCFG probability: {pcfg_score:.2f}"
-                        if alert_msg not in st.session_state.alerts:
+                        if alert_msg not in str(st.session_state.alerts):
                             st.session_state.alerts.append(alert_msg)
                 elif ngram_perp and ngram_perp > Q4_CONFIG["perplexity_high"]:
                     alert_msg = f"[GRAMMAR-ALERT] High trigram perplexity: {ngram_perp:.1f}"
-                    if alert_msg not in st.session_state.alerts:
+                    if alert_msg not in str(st.session_state.alerts):
                         st.session_state.alerts.append(alert_msg)
-        
-        # Text area with on_change callback for real-time alert processing
-        user_text = st.text_area(
-            "Start typing here... alerts appear as you type (processed on each change)",
-            value=st.session_state.get('user_text', ''),
-            height=200,
-            key="user_typing_input",
-            on_change=process_text
-        )
-        
-        # Initialize session state
-        if 'user_text' not in st.session_state:
-            st.session_state.user_text = ""
         
         # Display live stats
         col1, col2, col3 = st.columns(3)
