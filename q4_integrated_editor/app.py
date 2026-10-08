@@ -5,6 +5,10 @@ import math
 import sys
 import os
 import nltk
+
+# Ensure NLTK data path is set BEFORE importing nltk.corpus
+nltk.data.path.insert(0, os.path.expanduser("~/nltk_data"))
+
 from nltk.corpus import brown, treebank, gutenberg, reuters
 
 # Add path for Q1 and Q3 modules
@@ -211,10 +215,18 @@ def main():
         st.session_state.sentence_seg_counts = {}
     if 'sentence_spell_counts' not in st.session_state:
         st.session_state.sentence_spell_counts = {}
+    if 'live_mode' not in st.session_state:
+        st.session_state.live_mode = False
+    if 'live_index' not in st.session_state:
+        st.session_state.live_index = 0
+    if 'live_text' not in st.session_state:
+        st.session_state.live_text = ""
+    if 'live_char_index' not in st.session_state:
+        st.session_state.live_char_index = 0
     
     st.write("### Live Typing Simulation")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("New Random Passage"):
             st.session_state.passage = get_random_passage()
@@ -227,40 +239,116 @@ def main():
             st.session_state.grammar_latencies = []
             st.session_state.sentence_seg_counts = {}
             st.session_state.sentence_spell_counts = {}
+            st.session_state.live_mode = False
+            st.session_state.live_index = 0
+            st.session_state.live_text = ""
+            st.session_state.live_char_index = 0
             st.rerun()
     
     with col2:
-        if st.button("Start Live Processing"):
+        if st.button("Start Live Processing (Batch)"):
             st.session_state.run_live = True
+    
+    with col3:
+        if st.button("Manual Live Typing (User Input)"):
+            st.session_state.user_typing_mode = True
+            st.session_state.user_text = ""
+            st.session_state.alerts = []
+            st.session_state.segmentation_count = 0
+            st.session_state.spelling_count = 0
+            st.session_state.seg_latencies = []
+            st.session_state.grammar_latencies = []
+            st.rerun()
+    
+    # Manual Live Typing - User types freely
+    if st.session_state.get('user_typing_mode', False):
+        st.write("### Manual Live Typing (User Input)")
+        st.write("Type in the text area below. Alerts will appear in real-time as you type.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Stop Typing Mode"):
+                st.session_state.user_typing_mode = False
+                st.rerun()
+        with col2:
+            show_alerts = st.checkbox("Show Alerts", value=True)
+        
+        # Text area for user input
+        user_text = st.text_area(
+            "Start typing here...",
+            value=st.session_state.get('user_text', ''),
+            height=200,
+            key="user_typing_input",
+            on_change=None
+        )
+        
+        # Update session state when text changes
+        if 'user_text' not in st.session_state:
+            st.session_state.user_text = ""
+        
+        # Check if text changed
+        if user_text != st.session_state.user_text:
+            st.session_state.user_text = user_text
+            
+            # Process alerts on the new text
+            text = user_text
+            words = text.split()
+            
+            # SEGMENT-ALERT: Check for merged/unknown words
+            for word in words:
+                if word not in vocab and len(word) > Q4_CONFIG["merge_min_token_len"]:
+                    seg_words = viterbi_segmentation(word, vocab, trigram_probs, unigram_probs)
+                    if len(seg_words) > 1:
+                        if f"[SEGMENT-ALERT] '{word}'" not in str(st.session_state.alerts):
+                            st.session_state.segmentation_count += 1
+                            st.session_state.alerts.append(f"[SEGMENT-ALERT] '{word}' -> {' '.join(seg_words)}")
+            
+            # SPELL-ALERT: Check for unknown words
+            for word in words:
+                clean_word = word.strip('.,!?;:')
+                if clean_word and clean_word not in vocab:
+                    corrected = correct_nonword(clean_word, vocab, unigram_counts, edit_distance_1, sym_delete)
+                    if corrected != clean_word:
+                        if f"[SPELL-ALERT] '{clean_word}'" not in str(st.session_state.alerts):
+                            st.session_state.spelling_count += 1
+                            st.session_state.alerts.append(f"[SPELL-ALERT] '{clean_word}' -> '{corrected}'")
+            
+            # GRAMMAR-ALERT: Check every N words
+            N = Q4_CONFIG["trigger_interval"]
+            word_count = len([w for w in words if w.isalpha()])
+            if word_count >= N and word_count % N == 0:
+                window = words[-N:]
+                pcfg_result, ptb_tags, ngram_perp = pos_tag_and_parse(pcfg, pos_tagger, window, ngram_model)
+                if pcfg_result:
+                    pcfg_score = math.log(pcfg_result[0])
+                    if pcfg_score < Q4_CONFIG["pcfg_parse_threshold"]:
+                        alert_msg = f"[GRAMMAR-ALERT] Low PCFG probability: {pcfg_score:.2f}"
+                        if alert_msg not in st.session_state.alerts:
+                            st.session_state.alerts.append(alert_msg)
+                elif ngram_perp and ngram_perp > Q4_CONFIG["perplexity_high"]:
+                    alert_msg = f"[GRAMMAR-ALERT] High trigram perplexity: {ngram_perp:.1f}"
+                    if alert_msg not in st.session_state.alerts:
+                        st.session_state.alerts.append(alert_msg)
+        
+        # Display live stats
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Words", len(st.session_state.user_text.split()))
+        with col2:
+            st.metric("Seg Alerts", st.session_state.segmentation_count)
+        with col3:
+            st.metric("Spell Alerts", st.session_state.spelling_count)
+        
+        # Show alerts
+        if show_alerts and st.session_state.alerts:
+            st.write("### Live Alerts")
+            for alert in st.session_state.alerts[-10:]:
+                st.warning(alert)
+        
+        st.stop()  # Stop here to allow continuous typing
     
     # Live processing
     if st.session_state.get('run_live', False):
-        tokens = st.session_state.tokens
-        merged_tokens = introduce_merges(tokens, Q4_CONFIG["merge_probability"])
-        
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        alert_container = st.empty()
-        
-        processed = []
-        alerts = []
-        sentence_seg_counts = {}
-        sentence_spell_counts = {}
-        current_sentence_idx = 0
-        
-        N = Q4_CONFIG["trigger_interval"]
-        
-        for i, token in enumerate(merged_tokens):
-            progress_bar.progress((i + 1) / len(merged_tokens))
-            status_text.text(f"Processing token {i+1}/{len(merged_tokens)}: {token}")
-            
-            token_start = time.perf_counter()
-            
-            # SEGMENT-ALERT
-            seg_alert_fired = False
-            if token not in vocab and len(token) > Q4_CONFIG["merge_min_token_len"]:
-                seg_words = viterbi_segmentation(token, vocab, trigram_probs, unigram_probs)
-                if len(seg_words) > 1:
                     st.session_state.segmentation_count += 1
                     sentence_seg_counts[current_sentence_idx] = sentence_seg_counts.get(current_sentence_idx, 0) + 1
                     alerts.append(f"[SEGMENT-ALERT] '{token}' -> {' '.join(seg_words)}")
@@ -332,7 +420,7 @@ def main():
         st.session_state.alerts = alerts
         st.session_state.sentence_seg_counts = sentence_seg_counts
         st.session_state.sentence_spell_counts = sentence_spell_counts
-        st.session_state.run_live = False
+st.session_state.run_live = False
         st.success("Live processing complete!")
     
     # Display results
