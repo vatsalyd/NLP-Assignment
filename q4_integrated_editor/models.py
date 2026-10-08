@@ -1,4 +1,9 @@
 import nltk
+import os
+
+# Ensure NLTK data path is set BEFORE importing nltk.corpus
+nltk.data.path.insert(0, os.path.expanduser("~/nltk_data"))
+
 from nltk.corpus import brown, treebank, gutenberg, reuters
 from nltk import Nonterminal, Tree, ProbabilisticProduction
 from nltk.grammar import PCFG
@@ -7,7 +12,6 @@ from functools import lru_cache
 import math
 import random
 import sys
-import os
 
 # Add project root to path for Q1 imports
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
