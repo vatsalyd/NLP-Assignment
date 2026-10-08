@@ -347,81 +347,92 @@ def main():
         
         st.stop()  # Stop here to allow continuous typing
     
-    # Live processing
+# Live processing
     if st.session_state.get('run_live', False):
+        for i, token in enumerate(merged_tokens):
+            progress_bar.progress((i + 1) / len(merged_tokens))
+            status_text.text(f"Processing token {i+1}/{len(merged_tokens)}: {token}")
+            
+            token_start = time.perf_counter()
+            
+            # SEGMENT-ALERT
+            seg_alert_fired = False
+            if token not in vocab and len(token) > Q4_CONFIG["merge_min_token_len"]:
+                seg_words = viterbi_segmentation(token, vocab, trigram_probs, unigram_probs)
+                if len(seg_words) > 1:
                     st.session_state.segmentation_count += 1
                     sentence_seg_counts[current_sentence_idx] = sentence_seg_counts.get(current_sentence_idx, 0) + 1
                     alerts.append(f"[SEGMENT-ALERT] '{token}' -> {' '.join(seg_words)}")
                     token = ' '.join(seg_words)
                     seg_alert_fired = True
-            
-            # SPELL-ALERT
-            spell_alert_fired = False
-            word = token.split()[-1] if ' ' in token else token
-            clean_word = word.strip('.,!?;:')
-            if clean_word and clean_word not in vocab:
-                corrected = correct_nonword(clean_word, vocab, unigram_counts, edit_distance_1, sym_delete)
-                if corrected != clean_word:
-                    st.session_state.spelling_count += 1
-                    sentence_spell_counts[current_sentence_idx] = sentence_spell_counts.get(current_sentence_idx, 0) + 1
-                    alerts.append(f"[SPELL-ALERT] '{clean_word}' -> '{corrected}'")
-                    token = token.replace(clean_word, corrected)
-                    spell_alert_fired = True
-            
-            processed.append(token)
-            
-            # Track sentence boundaries for per-sentence counts
-            if token.endswith('.') or token.endswith('!') or token.endswith('?'):
-                current_sentence_idx += 1
-            
-            # GRAMMAR-ALERT and REAL-WORD check every N words
-            grammar_start = time.perf_counter()
-            if (i + 1) % N == 0:
-                window = processed[max(0, i-N+1):i+1]
-                flat_words = ' '.join(window).split()
                 
-                # Try PCFG parse with POS tagging
-                pcfg_result, ptb_tags, ngram_perp = pos_tag_and_parse(pcfg, pos_tagger, flat_words, ngram_model)
+                # SPELL-ALERT
+                spell_alert_fired = False
+                word = token.split()[-1] if ' ' in token else token
+                clean_word = word.strip('.,!?;:')
+                if clean_word and clean_word not in vocab:
+                    corrected = correct_nonword(clean_word, vocab, unigram_counts, edit_distance_1, sym_delete)
+                    if corrected != clean_word:
+                        st.session_state.spelling_count += 1
+                        sentence_spell_counts[current_sentence_idx] = sentence_spell_counts.get(current_sentence_idx, 0) + 1
+                        alerts.append(f"[SPELL-ALERT] '{clean_word}' -> '{corrected}'")
+                        token = token.replace(clean_word, corrected)
+                        spell_alert_fired = True
                 
-                grammar_alert_fired = False
-                if pcfg_result:
-                    pcfg_score = math.log(pcfg_result[0])
-                    if pcfg_score < Q4_CONFIG["pcfg_parse_threshold"]:  # Very low probability
-                        alerts.append(f"[GRAMMAR-ALERT] Low PCFG probability: {pcfg_score:.2f} in '{' '.join(window)}'")
-                        grammar_alert_fired = True
-                elif ngram_perp is not None:
-                    # Fallback to n-gram perplexity
-                    if ngram_perp > Q4_CONFIG["perplexity_high"]:
-                        alerts.append(f"[GRAMMAR-ALERT] High trigram perplexity (fallback): {ngram_perp:.1f} in '{' '.join(window)}'")
-                        grammar_alert_fired = True
+                processed.append(token)
                 
-                # REAL-WORD ERROR CHECK at same trigger interval
-                if len(flat_words) >= 2:
-                    for j in range(1, len(flat_words)):
-                        prev = flat_words[j-1]
-                        curr = flat_words[j]
-                        if curr in vocab:
-                            corrected = correct_realword(curr, prev, vocab, unigram_counts, 
-                                                         bigram_probs, edit_distance_1, sym_delete,
-                                                         Q3_CONFIG["realword_threshold"])
-                            if corrected != curr:
-                                alerts.append(f"[GRAMMAR-ALERT] Real-word: '{prev} {curr}' -> '{prev} {corrected}'")
+                # Track sentence boundaries for per-sentence counts
+                if token.endswith('.') or token.endswith('!') or token.endswith('?'):
+                    current_sentence_idx += 1
+                
+                # GRAMMAR-ALERT and REAL-WORD check every N words
+                grammar_start = time.perf_counter()
+                if (i + 1) % N == 0:
+                    window = processed[max(0, i-N+1):i+1]
+                    flat_words = ' '.join(window).split()
+                    
+                    # Try PCFG parse with POS tagging
+                    pcfg_result, ptb_tags, ngram_perp = pos_tag_and_parse(pcfg, pos_tagger, flat_words, ngram_model)
+                    
+                    grammar_alert_fired = False
+                    if pcfg_result:
+                        pcfg_score = math.log(pcfg_result[0])
+                        if pcfg_score < Q4_CONFIG["pcfg_parse_threshold"]:  # Very low probability
+                            alerts.append(f"[GRAMMAR-ALERT] Low PCFG probability: {pcfg_score:.2f} in '{' '.join(window)}'")
+                            grammar_alert_fired = True
+                    elif ngram_perp is not None:
+                        # Fallback to n-gram perplexity
+                        if ngram_perp > Q4_CONFIG["perplexity_high"]:
+                            alerts.append(f"[GRAMMAR-ALERT] High trigram perplexity (fallback): {ngram_perp:.1f} in '{' '.join(window)}'")
+                            grammar_alert_fired = True
+                    
+                    # REAL-WORD ERROR CHECK at same trigger interval
+                    if len(flat_words) >= 2:
+                        for j in range(1, len(flat_words)):
+                            prev = flat_words[j-1]
+                            curr = flat_words[j]
+                            if curr in vocab:
+                                corrected = correct_realword(curr, prev, vocab, unigram_counts, 
+                                                             bigram_probs, edit_distance_1, sym_delete,
+                                                             Q3_CONFIG["realword_threshold"])
+                                if corrected != curr:
+                                    alerts.append(f"[GRAMMAR-ALERT] Real-word: '{prev} {curr}' -> '{prev} {corrected}'")
+                    
+                grammar_elapsed = (time.perf_counter() - grammar_start) * 1000
+                token_elapsed = (time.perf_counter() - token_start) * 1000
+                
+                st.session_state.seg_latencies.append(token_elapsed)
+                st.session_state.grammar_latencies.append(grammar_elapsed)
+                
+                if i % 5 == 0:
+                    alert_container.write(f"Latest alerts: {alerts[-3:] if alerts else 'None'}")
             
-            grammar_elapsed = (time.perf_counter() - grammar_start) * 1000
-            token_elapsed = (time.perf_counter() - token_start) * 1000
-            
-            st.session_state.seg_latencies.append(token_elapsed)
-            st.session_state.grammar_latencies.append(grammar_elapsed)
-            
-            if i % 5 == 0:
-                alert_container.write(f"Latest alerts: {alerts[-3:] if alerts else 'None'}")
-        
-        st.session_state.processed = processed
-        st.session_state.alerts = alerts
-        st.session_state.sentence_seg_counts = sentence_seg_counts
-        st.session_state.sentence_spell_counts = sentence_spell_counts
-st.session_state.run_live = False
-        st.success("Live processing complete!")
+            st.session_state.processed = processed
+            st.session_state.alerts = alerts
+            st.session_state.sentence_seg_counts = sentence_seg_counts
+            st.session_state.sentence_spell_counts = sentence_spell_counts
+            st.session_state.run_live = False
+            st.success("Live processing complete!")
     
     # Display results
     if st.session_state.processed:
