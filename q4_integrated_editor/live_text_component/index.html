@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    textarea { box-sizing: border-box; width: 100%; height: 200px; padding: 10px;
+      font-size: 15px; resize: vertical; border: 1px solid #bbb; border-radius: 4px; }
+    #status { color: #666; font-size: 12px; margin-top: 5px; }
+  </style>
+</head>
+<body>
+  <textarea id="editor" placeholder="Start typing here..."></textarea>
+  <div id="status">Live checks are active</div>
+  <script>
+    const editor = document.getElementById("editor");
+    const status = document.getElementById("status");
+    let sendTimer = null;
+    let renderedValue = "";
+
+    function sendMessage(type, payload) {
+      window.parent.postMessage({
+        isStreamlitMessage: true,
+        type: type,
+        ...payload
+      }, "*");
+    }
+
+    function sendValue() {
+      const value = editor.value;
+      renderedValue = value;
+      status.textContent = "Checking...";
+      sendMessage("streamlit:setComponentValue", {
+        value: value,
+        dataType: "json"
+      });
+    }
+
+    editor.addEventListener("input", function () {
+      clearTimeout(sendTimer);
+      sendTimer = setTimeout(sendValue, 180);
+    });
+
+    window.addEventListener("message", function (event) {
+      if (!event.data || event.data.type !== "streamlit:render") return;
+      const args = event.data.args || {};
+      const value = typeof args.value === "string" ? args.value : "";
+      if (value !== renderedValue && document.activeElement !== editor) {
+        editor.value = value;
+        renderedValue = value;
+      }
+      status.textContent = "Live checks are active";
+      sendMessage("streamlit:setFrameHeight", { height: 245 });
+    });
+
+    sendMessage("streamlit:componentReady", { apiVersion: 1 });
+    sendMessage("streamlit:setFrameHeight", { height: 245 });
+  </script>
+</body>
+</html>
