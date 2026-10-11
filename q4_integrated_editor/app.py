@@ -456,7 +456,7 @@ def main():
     st.write("### Live Typing Simulation")
     st.caption(
         f"Batch passage: {len(st.session_state.tokens)} words "
-        "(minimum 100 words)"
+        "(minimum 500 words)"
     )
     
     col1, col2, col3 = st.columns(3)

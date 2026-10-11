@@ -419,7 +419,7 @@ def viterbi_segmentation(text, vocab, trigram_probs, unigram_probs, max_word_len
     words.reverse()
     return words
 
-def get_random_passage(min_words=100):
+def get_random_passage(min_words=500):
     """Return a contiguous corpus passage with at least ``min_words``.
 
     The live batch demo is intended to exercise incremental processing over a
@@ -428,6 +428,7 @@ def get_random_passage(min_words=100):
     """
     corpora = [gutenberg, reuters, brown]
 
+    longest_text = ''
     for _ in range(100):
         corpus = random.choice(corpora)
         file = random.choice(corpus.fileids())
@@ -437,14 +438,16 @@ def get_random_passage(min_words=100):
 
         start = random.randint(0, max(0, len(sents) - 5))
         end = min(len(sents), start + random.randint(5, 8))
-        passage_sents = sents[start:end]
-        text = ' '.join(' '.join(sentence) for sentence in passage_sents)
+        text = ' '.join(' '.join(sentence) for sentence in sents[start:end])
+        while end < len(sents) and len(text.split()) < min_words:
+            end += 1
+            text = ' '.join(' '.join(sentence) for sentence in sents[start:end])
         if len(text.split()) >= min_words:
             return text
+        if len(text.split()) > len(longest_text.split()):
+            longest_text = text
 
-    # Deterministic fallback for corpora containing unusually short windows:
-    # keep adding contiguous sentences until the requested length is reached.
-    longest_text = ''
+    # Deterministic fallback for unusually short files.
     for corpus in corpora:
         for file in corpus.fileids():
             sents = corpus.sents(file)

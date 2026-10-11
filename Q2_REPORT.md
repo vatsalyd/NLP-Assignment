@@ -14,7 +14,8 @@ This report presents the implementation and evaluation of a transition-based dep
 
 ### Training Data Generation
 - **Oracle Simulator**: For each gold parse, simulate parsing to generate (configuration, correct_transition) pairs
-- **Training Instances**: 77,604 (from 2,000 training sentences)
+- **Training Instances**: 392,242 (full training split, excluding unsupported non-projective trees)
+- **Non-projective training sentences skipped**: 287
 
 ## 2. Feature Extraction
 Features extracted from parser configuration:
@@ -30,21 +31,21 @@ Features extracted from parser configuration:
   - C=1.0
   - solver='lbfgs'
 - **Vectorization**: DictVectorizer (sparse)
-- **Training Classes**: 73 transition types
-- **Training Instances**: 77,604
+- **Training Classes**: 82 labeled transition types
+- **Training Instances**: 392,242
 
 ## 4. Evaluation Results
 
 ### Labeled Attachment Score (LAS)
 | Dataset | Sentences | LAS |
 |---------|-----------|-----|
-| Dev (UD English-EWT) | 100 | **30.30%** |
+| Dev (UD English-EWT) | 2,001 | **56.92%** |
 
 ### Sample Predictions
 | Sentence | Predicted (top 5) | Gold (top 5) | LAS |
 |----------|-------------------|--------------|-----|
-| "From the AP comes this story" | (3,2,det), (6,5,det), (5,7,punct), (4,5,det), (2,4,root) | (3,1,case), (3,2,det), (4,3,obl), (6,5,det), (4,6,nsubj) | 33.33% |
-| "President Bush on Tuesday..." | (2,1,nmod:desc), (4,3,case), (7,6,nummod), (9,8,mark), (10,8,mark) | (2,1,nmod:desc), (5,2,nsubj), (4,3,case), (5,4,obl), (7,6,nummod) | 33.33% |
+| "From the AP comes this story" | (3,2,det), (3,1,case), (4,3,nsubj), (6,5,det), (4,6,obj) | (3,1,case), (3,2,det), (4,3,obl), (0,4,root), (6,5,det) | 71.43% |
+| "President Bush on Tuesday..." | (4,3,case), (5,4,nsubj), (5,2,nsubj), (5,1,nsubj), (7,6,nummod) | (2,1,nmod:desc), (5,2,nsubj), (4,3,case), (5,4,obl), (0,5,root) | 73.68% |
 
 ## 5. Error Analysis
 
@@ -55,21 +56,21 @@ Features extracted from parser configuration:
 3. **Coordination**: Conjunction structures poorly handled
 
 ### Root Causes
-1. **Limited Features**: Only POS tags of s0, s1, b0, b1 - no lexical features, distances, or arc labels
-2. **Training Subset**: Only 2,000 of ~12,000 training sentences used
+1. **Limited Features**: Only POS tags of s0, s1, b0, b1 - no lexical or arc-history features
+2. **Non-projective trees**: 287 training sentences cannot be represented by the required transitions
 3. **No Beam Search**: Greedy decoding - no exploration of alternatives
 4. **Arc-Standard Limitations**: Cannot handle non-projective trees
 
 ## 6. Design Decisions
 
 ### Feature Set Choice
-- **Minimal POS-only features**: Fast extraction, but limited expressivity
+- **Minimal POS-only features**: Matches the assignment specification, but limits expressivity
 - **No lexical features**: Word forms not used - limits disambiguation
 - **No arc labels in history**: Cannot use previously predicted arc labels
 
 ### Arc-Standard Choice
 - **Pros**: Simple, efficient O(n) parsing, well-studied
-- **Cons**: Cannot handle non-projective dependencies (~5-10% in English)
+- **Cons**: Cannot handle non-projective dependencies; unsupported trees are skipped during oracle training
 
 ### Classifier Choice
 - **Logistic Regression**: Fast training, probabilistic output, works well with sparse features
@@ -84,8 +85,8 @@ Features extracted from parser configuration:
 - Reasonable baseline LAS for minimal features
 
 ### Weaknesses
-- Low LAS (30.3%) - far from state-of-the-art (~90%+)
-- Only 2,000 training sentences (subset)
+- LAS (56.92%) remains below richer state-of-the-art systems
+- Non-projective trees are excluded from oracle training
 - Greedy decoding - no search
 - No non-projective handling
 
@@ -93,7 +94,7 @@ Features extracted from parser configuration:
 
 | System | Features | Training Data | LAS (Dev) |
 |--------|----------|---------------|-----------|
-| **Our System** | POS tags (s0,s1,b0,b1) | 2,000 sent | 30.3% |
+| **Our System** | POS tags (s0,s1,b0,b1) | Full split, projective trees | 56.92% |
 | **Baseline (random)** | - | - | ~10% |
 | **Stanford CoreNLP** | Rich features + neural | Full UD | ~88% |
 | **UDPipe** | Neural + rich features | Full UD | ~85% |
@@ -101,9 +102,9 @@ Features extracted from parser configuration:
 ## 8. Future Improvements
 
 ### Immediate (High Impact)
-1. **Use full training data** (~12k sentences) - expect +15-20% LAS
-2. **Add beam search** (beam width 5-10) - expect +5-10% LAS
-3. **Add lexical features** (word forms of s0, s1, b0, b1) - expect +5% LAS
+1. **Add a SWAP transition** to train on non-projective trees
+2. **Add beam search** (beam width 5-10)
+3. **Add lexical features** only if features beyond POS are permitted
 
 ### Medium-term
 4. **Add arc labels to features** (previously predicted labels)
@@ -119,18 +120,18 @@ Features extracted from parser configuration:
 
 ### Model Persistence
 - **Checkpointing**: Implemented via pickle (model_utils.py)
-- **Cache Location**: ./checkpoints/q2_models.pkl
+- **Cache Location**: ./checkpoints/q2_models_arcstandard_v2.pkl
 - **Contents**: Trained DependencyParser (vectorizer + classifier)
 
 ### Configuration
 All hyperparameters externalized to config.py:
-- Training subset size: 2,000
-- Eval sample size: 100
+- Training subset size: None (full split)
+- Eval sample size: None (full split)
 - LogisticRegression: max_iter=1000, C=1.0, solver='lbfgs'
 
 ## 10. Conclusions
 
-The implementation correctly demonstrates the core components of a transition-based dependency parser:
+The implementation demonstrates the core components of a transition-based dependency parser:
 1. ✅ CoNLL-U parsing with proper data structures
 2. ✅ Arc-standard oracle simulation
 3. ✅ Feature extraction from parser configurations
@@ -138,12 +139,12 @@ The implementation correctly demonstrates the core components of a transition-ba
 5. ✅ Arc-standard parsing loop with greedy decoding
 6. ✅ LAS evaluation metric
 
-However, the **LAS of 30.3%** indicates significant room for improvement. The primary bottlenecks are:
-1. **Training data subset** (2k vs 12k available)
+The corrected **LAS of 56.92%** is a stronger baseline. The primary bottlenecks are:
+1. **Non-projective training trees** (287 are unsupported by plain arc-standard)
 2. **Minimal feature set** (POS tags only)
 3. **Greedy decoding** (no search)
 4. **No lexical information**
 
-With full training data and enriched features, we expect LAS to reach 50-60%. With neural models and beam search, 75%+ should be achievable.
+Adding SWAP, beam search, or richer permitted features could improve this baseline further.
 
 ---

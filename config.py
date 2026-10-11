@@ -40,8 +40,9 @@ Q1_CONFIG = {
 # Q2: Dependency Parser
 Q2_CONFIG = {
     # Training
-    "train_subset_size": 2000,
-    "eval_sample_size": 100,
+    # None means use the complete official train/dev split.
+    "train_subset_size": None,
+    "eval_sample_size": None,
     
     # Classifier
     "logistic_regression": {

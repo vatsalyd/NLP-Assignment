@@ -1,4 +1,9 @@
 import nltk
+import os
+
+# Ensure NLTK data path is set BEFORE importing nltk.corpus
+nltk.data.path.insert(0, os.path.expanduser("~/nltk_data"))
+
 from nltk.corpus import brown
 from collections import defaultdict
 import random

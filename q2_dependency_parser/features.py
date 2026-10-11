@@ -1,49 +1,39 @@
 from typing import List, Dict, Tuple
 from q2_dependency_parser.conllu_parser import Sentence
-from q2_dependency_parser.transition_system import Configuration, Transition, TransitionType
+from q2_dependency_parser.transition_system import (
+    Configuration,
+    Transition,
+    TransitionType,
+    is_projective,
+    simulate_oracle,
+)
+
+
+def _pos(sentence: Sentence, token_id: int) -> str:
+    """Return a POS value for a token id, including the artificial ROOT."""
+    if token_id == 0:
+        return 'ROOT'
+    return sentence.tokens[token_id - 1].upos
 
 def extract_features(config: Configuration, sentence: Sentence) -> Dict[str, str]:
     features = {}
     
-    if config.stack:
-        top_idx = config.stack[-1] - 1
-        if top_idx < len(sentence.tokens):
-            features['stack_top_pos'] = sentence.tokens[top_idx].upos
-            features['stack_top_form'] = sentence.tokens[top_idx].form.lower()
-    else:
-        features['stack_top_pos'] = 'NIL'
-        features['stack_top_form'] = 'NIL'
+    features['stack_top_pos'] = _pos(sentence, config.stack[-1]) if config.stack else 'NIL'
     
     if len(config.stack) >= 2:
-        second_idx = config.stack[-2] - 1
-        if second_idx < len(sentence.tokens):
-            features['stack_second_pos'] = sentence.tokens[second_idx].upos
-            features['stack_second_form'] = sentence.tokens[second_idx].form.lower()
+        features['stack_second_pos'] = _pos(sentence, config.stack[-2])
     else:
         features['stack_second_pos'] = 'NIL'
-        features['stack_second_form'] = 'NIL'
     
     if config.buffer:
-        first_idx = config.buffer[0] - 1
-        if first_idx < len(sentence.tokens):
-            features['buffer_first_pos'] = sentence.tokens[first_idx].upos
-            features['buffer_first_form'] = sentence.tokens[first_idx].form.lower()
+        features['buffer_first_pos'] = _pos(sentence, config.buffer[0])
     else:
         features['buffer_first_pos'] = 'NIL'
-        features['buffer_first_form'] = 'NIL'
     
     if len(config.buffer) >= 2:
-        second_idx = config.buffer[1] - 1
-        if second_idx < len(sentence.tokens):
-            features['buffer_second_pos'] = sentence.tokens[second_idx].upos
-            features['buffer_second_form'] = sentence.tokens[second_idx].form.lower()
+        features['buffer_second_pos'] = _pos(sentence, config.buffer[1])
     else:
         features['buffer_second_pos'] = 'NIL'
-        features['buffer_second_form'] = 'NIL'
-    
-    # Distance features
-    if config.stack and config.buffer:
-        features['dist_top_buffer'] = str(config.buffer[0] - config.stack[-1])
     
     return features
 
@@ -68,14 +58,18 @@ def label_to_transition(label: str) -> Transition:
 def prepare_training_data(sentences: List[Sentence]):
     X = []
     y = []
+    skipped_nonprojective = 0
     for i, sentence in enumerate(sentences):
         if i % 100 == 0:
             print(f"Processing sentence {i}/{len(sentences)}")
+        if not is_projective(sentence):
+            skipped_nonprojective += 1
+            continue
         instances = simulate_oracle(sentence)
         for config, trans in instances:
             features = extract_features(config, sentence)
             X.append(features)
             y.append(transition_to_label(trans))
+    if skipped_nonprojective:
+        print(f"Skipped {skipped_nonprojective} non-projective sentences (unsupported by arc-standard transitions)")
     return X, y
-
-from q2_dependency_parser.transition_system import simulate_oracle

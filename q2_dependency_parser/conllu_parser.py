@@ -59,6 +59,8 @@ def parse_conllu(filepath: str) -> List[Sentence]:
 def get_gold_arcs(sentence: Sentence) -> List[Tuple[int, int, str]]:
     arcs = []
     for token in sentence.tokens:
-        if token.head > 0:
+        # Keep the ROOT attachment (head id 0).  It is part of the
+        # dependency tree and must be included when training/evaluating LAS.
+        if token.head >= 0:
             arcs.append((token.head, token.id, token.deprel))
     return arcs

@@ -110,7 +110,7 @@ python parser.py
 source venv/bin/activate
 python parser.py
 ```
-**Outputs:** LAS score (30.3% on 100 dev sentences), sample predictions with gold comparison, training statistics
+**Outputs:** Full-dev corpus LAS (56.92%), sample predictions, and the three assignment demo sentences
 
 ### Q3: Spelling Corrector
 ```powershell
@@ -177,7 +177,7 @@ All trained models auto-save to `./checkpoints/`:
 | `q1_english_models.pkl` | English segmentation + POS |
 | `q1_spanish_models.pkl` | Spanish standard POS |
 | `q1_spanish_morph_models.pkl` | Spanish morphology-aware (86 tags) |
-| `q2_models.pkl` | Dependency parser |
+| `q2_models_arcstandard_v2.pkl` | Corrected ROOT-aware dependency parser |
 | `q3_models.pkl` | Spelling corrector (vocab + SymmetricDelete) |
 | `q4_pcfg.pkl` | PCFG parser for Q4 |
 
@@ -207,7 +207,7 @@ All hyperparameters in `config.py`:
 | Config | Key Parameters |
 |--------|----------------|
 | `Q1_CONFIG` | `brown_train_split=0.8`, `max_word_len=20`, `eval_sample_size=100` |
-| `Q2_CONFIG` | `train_subset_size=2000`, `eval_sample_size=100`, LR params |
+| `Q2_CONFIG` | Full train/dev splits, LR params |
 | `Q3_CONFIG` | `speed_demon_num_words=1000`, `realword_threshold=1.5` |
 | `Q4_CONFIG` | `merge_probability=0.08`, `trigger_interval=10`, PCFG thresholds |
 | `NGRAM_CONFIG` | `add_k=0.1` (shared add-k smoothing) |
@@ -219,7 +219,7 @@ All hyperparameters in `config.py`:
 | Report | Description |
 |--------|-------------|
 | `Q1_REPORT.md` | Segmentation/POS results, confusion matrices, English vs Spanish comparison, morphology assessment |
-| `Q2_REPORT.md` | Dependency parser LAS (30.3%), error analysis, design decisions, future improvements |
+| `Q2_REPORT.md` | Dependency parser LAS (56.92%), error analysis, design decisions, future improvements |
 | `COMPARATIVE_ANALYSIS_REPORT.md` | Full integration analysis with 2 sample runs, sub-system interaction table, design justifications |
 | `CONTRIBUTION_SPLIT.md` | Team contribution breakdown by question |
 | `RUN_COMMANDS.md` | Complete command reference |
