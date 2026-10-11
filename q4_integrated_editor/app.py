@@ -581,7 +581,7 @@ def main():
                     window = words[-N:]
                     pcfg_result, ptb_tags, ngram_perp = pos_tag_and_parse(pcfg, pos_tagger, window, ngram_model)
                     if pcfg_result:
-                        pcfg_score = math.log(pcfg_result[0])
+                        pcfg_score = math.log(max(pcfg_result[0], 1e-300))
                         if pcfg_score < Q4_CONFIG["pcfg_parse_threshold"]:
                             alert_msg = f"[GRAMMAR-ALERT] Low PCFG probability: {pcfg_score:.2f}"
                             if alert_msg not in st.session_state.alerts:
@@ -700,7 +700,7 @@ def main():
                     window = words[-N:]
                     pcfg_result, ptb_tags, ngram_perp = pos_tag_and_parse(pcfg, pos_tagger, window, ngram_model)
                     if pcfg_result:
-                        pcfg_score = math.log(pcfg_result[0])
+                        pcfg_score = math.log(max(pcfg_result[0], 1e-300))
                         if pcfg_score < Q4_CONFIG["pcfg_parse_threshold"]:
                             alert_msg = f"[GRAMMAR-ALERT] Low PCFG probability: {pcfg_score:.2f}"
                             if alert_msg not in st.session_state.alerts:
@@ -878,7 +878,7 @@ def main():
                     
                     grammar_alert_fired = False
                     if pcfg_result:
-                        pcfg_score = math.log(pcfg_result[0])
+                        pcfg_score = math.log(max(pcfg_result[0], 1e-300))
                         if pcfg_score < Q4_CONFIG["pcfg_parse_threshold"]:  # Very low probability
                             alerts.append(f"[GRAMMAR-ALERT] Low PCFG probability: {pcfg_score:.2f} in '{' '.join(window)}'")
                             grammar_alert_fired = True
@@ -1014,7 +1014,10 @@ def main():
                 
                 # PCFG parse with POS tagging and n-gram fallback
                 pcfg_result, ptb_tags, ngram_perp = pos_tag_and_parse(pcfg, pos_tagger, tokens, ngram_model)
-                pcfg_score = math.log(pcfg_result[0]) if pcfg_result else float('-inf')
+                pcfg_score = (
+                    math.log(max(pcfg_result[0], 1e-300))
+                    if pcfg_result else float('-inf')
+                )
                 
                 bi_perp = ngram_model.perplexity(tokens, n=2)
                 tri_perp = ngram_model.perplexity(tokens, n=3)
