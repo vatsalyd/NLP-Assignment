@@ -78,18 +78,18 @@ Q4_CONFIG = {
     "merge_min_token_len": 5,
     
     # Grammar checking
-    "trigger_interval": 10,
-    "grammar_check_every_n": 5,
+    "trigger_interval": 3,
+    "grammar_check_every_n": 3,
     
-    # PCFG thresholds
-    "pcfg_parse_threshold": -100,
-    "pcfg_grammatical_threshold": -50,
+    # PCFG thresholds (log probabilities)
+    "pcfg_parse_threshold": -200,
+    "pcfg_grammatical_threshold": -150,
     
-    # Perplexity thresholds
-    "perplexity_high": 500,
-    "perplexity_trigram_adequate": 200,
-    "perplexity_trigram_good": 100,
-    "perplexity_bigram_good": 150,
+    # Perplexity thresholds (based on actual observed values: good ~6K, bad ~45K)
+    "perplexity_high": 40000,
+    "perplexity_trigram_adequate": 20000,
+    "perplexity_trigram_good": 10000,
+    "perplexity_bigram_good": 5000,
     
     # N-gram smoothing
     "add_k_smoothing": 0.1,

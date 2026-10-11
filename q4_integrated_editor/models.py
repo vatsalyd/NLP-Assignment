@@ -340,9 +340,9 @@ def pos_tag_and_parse(pcfg, pos_tagger, words, ngram_model=None):
     
     result = cky_parse(pcfg, ptb_tags)
     
-    # Fallback to n-gram perplexity if PCFG parse fails
+    # Always compute n-gram perplexity for grammar alerts (if model provided)
     ngram_perp = None
-    if result is None and ngram_model is not None:
+    if ngram_model is not None:
         ngram_perp = ngram_model.perplexity(words, n=3)
     
     return result, ptb_tags, ngram_perp
@@ -419,17 +419,46 @@ def viterbi_segmentation(text, vocab, trigram_probs, unigram_probs, max_word_len
     words.reverse()
     return words
 
-def get_random_passage():
+def get_random_passage(min_words=100):
+    """Return a contiguous corpus passage with at least ``min_words``.
+
+    The live batch demo is intended to exercise incremental processing over a
+    substantial passage. We still prefer the assignment's 5--8 sentence
+    window, but extend the window when those sentences are too short.
+    """
     corpora = [gutenberg, reuters, brown]
-    corpus = random.choice(corpora)
-    files = corpus.fileids()
-    file = random.choice(files)
-    sents = corpus.sents(file)
-    if len(sents) < 8:
-        return get_random_passage()
-    start = random.randint(0, len(sents) - 8)
-    passage_sents = sents[start:start + random.randint(5, 8)]
-    return ' '.join(' '.join(s) for s in passage_sents)
+
+    for _ in range(100):
+        corpus = random.choice(corpora)
+        file = random.choice(corpus.fileids())
+        sents = corpus.sents(file)
+        if len(sents) < 5:
+            continue
+
+        start = random.randint(0, max(0, len(sents) - 5))
+        end = min(len(sents), start + random.randint(5, 8))
+        passage_sents = sents[start:end]
+        text = ' '.join(' '.join(sentence) for sentence in passage_sents)
+        if len(text.split()) >= min_words:
+            return text
+
+    # Deterministic fallback for corpora containing unusually short windows:
+    # keep adding contiguous sentences until the requested length is reached.
+    longest_text = ''
+    for corpus in corpora:
+        for file in corpus.fileids():
+            sents = corpus.sents(file)
+            if not sents:
+                continue
+            end = 0
+            while end < len(sents) and len(' '.join(' '.join(sentence) for sentence in sents[:end + 1]).split()) < min_words:
+                end += 1
+            text = ' '.join(' '.join(sentence) for sentence in sents[:end])
+            if len(text.split()) >= min_words:
+                return text
+            if len(text.split()) > len(longest_text.split()):
+                longest_text = text
+    return longest_text
 
 def introduce_merges(tokens, p=0.08):
     result = []
